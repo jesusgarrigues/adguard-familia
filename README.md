@@ -76,3 +76,7 @@ El workflow `.github/workflows/docker.yml` ejecuta pruebas y publica imágenes m
 - Secreto **DOCKERHUB_TOKEN**: token de Docker Hub con permisos de escritura al repositorio `adguard-familia`.
 
 No subas el token a archivos ni commits. Crea el repositorio Docker Hub `adguard-familia` en tu cuenta y elige su visibilidad. Para publicar una versión estable, crea una etiqueta como `v0.2.0` después de superar las pruebas. Hasta que el workflow termine correctamente, la imagen no está disponible para instalar.
+
+## Diagnóstico de conexión
+
+En **Servidor**, usa **Probar conexión** y **Actualizar diagnóstico**. El panel distingue HTTP 401/403/404, timeout, DNS, conexión rechazada, certificados y respuestas no JSON, indicando el endpoint. Los últimos 100 resultados se conservan en memoria; los fallos se registran también con `docker compose logs --tail=100 adguard-familia`. No se registran contraseñas ni cabeceras de autorización. La actualización automática se pausa en Servidor y mientras se editan formularios.

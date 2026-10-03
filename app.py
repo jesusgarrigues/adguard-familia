@@ -1,3 +1,5 @@
+import logging, socket, ssl
+from collections import deque
 import base64, copy, hmac, ipaddress, json, os, sqlite3, threading, time, urllib.error, urllib.request
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
@@ -17,6 +19,8 @@ CREATE TABLE IF NOT EXISTS seen (key TEXT PRIMARY KEY, time REAL);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
 ''')
 LAST_ERROR = ''
+DIAGNOSTICS = deque(maxlen=100)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 SAFE_KEYS = ('enabled','bing','duckduckgo','ecosia','google','pixabay','yandex','youtube')
 BOOL_KEYS = ('use_global_settings','filtering_enabled','parental_enabled','safebrowsing_enabled','safesearch_enabled','use_global_blocked_services','ignore_querylog','ignore_statistics','upstreams_cache_enabled')
 CLIENT_KEYS = set(BOOL_KEYS) | {'name','ids','safe_search','blocked_services_schedule','blocked_services','upstreams','tags','upstreams_cache_size'}
@@ -44,6 +48,32 @@ def public_server():
     return {k:v for k,v in c.items() if k != 'password'} | {'has_password':bool(c.get('password'))}
 
 
+class AdGuardError(RuntimeError):
+    def __init__(self, endpoint, category, message, status=None):
+        self.detail = {'endpoint': endpoint.split('?')[0], 'category': category, 'message': message, 'http_status': status}
+        super().__init__(message)
+
+
+def diagnostic(endpoint, ok, started, error=None):
+    item = {'time': time.time(), 'endpoint': endpoint.split('?')[0], 'ok': ok, 'duration_ms': round((time.monotonic()-started)*1000)}
+    if error: item.update(error.detail)
+    DIAGNOSTICS.append(item)
+    if error: logging.warning('AdGuard endpoint=%s category=%s status=%s: %s', item['endpoint'], item['category'], item.get('http_status'), item['message'])
+
+
+def network_error(endpoint, error):
+    reason = getattr(error, 'reason', error)
+    if isinstance(error, urllib.error.HTTPError):
+        code=error.code
+        message={401:'AdGuard rechaza el usuario o contraseña (HTTP 401).',403:'Acceso denegado por AdGuard o su proxy (HTTP 403).',404:'No se encuentra la API (HTTP 404). Comprueba URL, puerto y ruta del proxy.'}.get(code, 'AdGuard o su proxy devolvió HTTP '+str(code)+'.')
+        return AdGuardError(endpoint,'http',message,code)
+    if isinstance(reason, ssl.SSLCertVerificationError): return AdGuardError(endpoint,'tls','No se puede verificar el certificado HTTPS. Usa un certificado confiable o instala su CA en el contenedor.')
+    if isinstance(reason, (TimeoutError,socket.timeout)): return AdGuardError(endpoint,'timeout','La conexión ha superado 10 segundos. Comprueba red, IP, puerto y firewall desde el contenedor.')
+    if isinstance(reason, socket.gaierror): return AdGuardError(endpoint,'dns','No se puede resolver el nombre del servidor desde el contenedor.')
+    if isinstance(reason, ConnectionRefusedError): return AdGuardError(endpoint,'connection_refused','El servidor rechaza la conexión. Comprueba el puerto web de AdGuard.')
+    return AdGuardError(endpoint,'network','No se puede alcanzar el servidor desde el contenedor. Comprueba IP, puerto, red Docker y firewall.')
+
+
 def api(path, payload=None, method=None, config=None):
     cfg = config or server_config()
     if cfg.get('demo'):
@@ -66,12 +96,27 @@ def api(path, payload=None, method=None, config=None):
             raise ValueError('Cliente desconocido')
         if path == 'clients/add': DEMO_CLIENTS.append(copy.deepcopy(payload));return {}
         raise ValueError('Endpoint no simulado: '+path)
-    url = cfg['url'].rstrip('/') + '/control/' + path
+    base = cfg['url'].rstrip('/')
+    if not base:
+        raise AdGuardError(path,'configuration','Configura la URL del servidor en la pantalla Servidor.')
+    url = base + ('/' if base.endswith('/control') else '/control/') + path
     credentials = base64.b64encode((cfg['username']+':'+cfg['password']).encode()).decode()
     req = urllib.request.Request(url, data=json.dumps(payload).encode() if payload is not None else None, method=method or ('POST' if payload is not None else 'GET'),headers={'Authorization':'Basic '+credentials,'Content-Type':'application/json'})
-    with urllib.request.urlopen(req, timeout=10) as response:
-        raw = response.read()
-        return json.loads(raw) if raw else {}
+    started=time.monotonic()
+    try:
+        with urllib.request.urlopen(req, timeout=10) as response:
+            raw=response.read()
+            try: result=json.loads(raw) if raw else {}
+            except (ValueError,UnicodeError): raise AdGuardError(path,'response','El servidor devuelve contenido que no es JSON. La URL puede apuntar a una página de login o al puerto equivocado.')
+        diagnostic(path,True,started)
+        return result
+    except AdGuardError as error:
+        diagnostic(path,False,started,error)
+        raise
+    except (urllib.error.URLError,OSError) as error:
+        safe=network_error(path,error)
+        diagnostic(path,False,started,safe)
+        raise safe from None
 
 
 def global_config():
@@ -285,6 +330,9 @@ def save_server(body,test_only=False):
     if not test_only and DB.execute('SELECT 1 FROM baselines').fetchone(): raise ValueError('Finaliza todos los permisos antes de cambiar de servidor')
     status=api('status',config=cfg)
     api('clients',config=cfg)
+    if test_only:
+        for endpoint in ('filtering/status','parental/status','safebrowsing/status','safesearch/status','blocked_services/get','blocked_services/all'):
+            api(endpoint,config=cfg)
     if not test_only:
         DB.execute("INSERT OR REPLACE INTO settings VALUES('server',?)",(json.dumps(cfg),))
         DB.execute('DELETE FROM seen');DB.execute('DELETE FROM events');DB.commit()
@@ -330,7 +378,8 @@ def worker():
     while True:
         with LOCK:
             try: reconcile();poll();LAST_ERROR=''
-            except Exception: LAST_ERROR='Conexión con AdGuard interrumpida. Los cambios pendientes se reintentarán.'
+            except AdGuardError as e: LAST_ERROR=str(e)
+            except Exception: LAST_ERROR='Fallo al sincronizar AdGuard. Revisa el diagnóstico del servidor.';logging.error('Error interno de sincronización (sin datos de credenciales)')
         time.sleep(10)
 
 
@@ -338,19 +387,35 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self,*args): pass
     def respond(self,status,data,mime='application/json'):
         content=json.dumps(data,ensure_ascii=False).encode() if mime=='application/json' else data
-        self.send_response(status);self.send_header('Content-Type',mime+'; charset=utf-8');self.send_header('Cache-Control','no-store');self.send_header('X-Content-Type-Options','nosniff');self.send_header('Referrer-Policy','no-referrer');self.end_headers();self.wfile.write(content)
+        try:
+            self.send_response(status);self.send_header('Content-Type',mime+'; charset=utf-8');self.send_header('Cache-Control','no-store');self.send_header('X-Content-Type-Options','nosniff');self.send_header('Referrer-Policy','no-referrer');self.end_headers();self.wfile.write(content)
+        except (BrokenPipeError,ConnectionResetError):
+            logging.info('El navegador o proxy cerró la solicitud antes de recibir la respuesta')
     def authorized(self): return bool(TOKEN) and hmac.compare_digest(self.headers.get('Authorization',''),'Bearer '+TOKEN)
     def do_GET(self):
         if self.path=='/': return self.respond(200,(ROOT/'index.html').read_bytes(),'text/html')
         if not self.authorized(): return self.respond(401,{'error':'Clave de acceso incorrecta'})
+        if self.path=='/api/diagnostics': return self.respond(200,{'entries':list(DIAGNOSTICS),'last_error':LAST_ERROR})
+        if self.path=='/api/server': return self.respond(200,public_server())
         with LOCK:
             try:
                 if self.path=='/api/server': return self.respond(200,public_server())
+                if self.path=='/api/diagnostics': return self.respond(200,{'entries':list(DIAGNOSTICS),'last_error':LAST_ERROR})
                 if self.path=='/api/state': return self.respond(200,state())
                 self.respond(404,{'error':'No encontrado'})
-            except Exception: self.respond(502,{'error':'No se puede leer AdGuard. Revisa la conexión en Servidor.'})
+            except AdGuardError as e: self.respond(502,{'error':str(e),'diagnostic':e.detail})
+            except Exception: self.respond(502,{'error':'No se puede leer AdGuard. Revisa el diagnóstico en Servidor.'})
     def do_POST(self):
         if not self.authorized(): return self.respond(401,{'error':'Acceso denegado'})
+        if self.path=='/api/server/test':
+            try:
+                length=int(self.headers.get('Content-Length','0'))
+                if not 0<length<=131072: raise ValueError('Solicitud inválida')
+                self.respond(200,save_server(json.loads(self.rfile.read(length)),True))
+            except AdGuardError as e: self.respond(502,{'error':str(e),'diagnostic':e.detail})
+            except (ValueError,KeyError,TypeError) as e: self.respond(400,{'error':str(e)})
+            except Exception: self.respond(502,{'error':'No se pudo completar el diagnóstico de conexión.'})
+            return
         with LOCK:
             try:
                 length=int(self.headers.get('Content-Length','0'))
@@ -367,6 +432,7 @@ class Handler(BaseHTTPRequestHandler):
                 elif self.path in ('/api/server','/api/server/test'): result=save_server(body,self.path.endswith('/test'))
                 else: return self.respond(404,{'error':'No encontrado'})
                 self.respond(200,result)
+            except AdGuardError as e: self.respond(502,{'error':str(e),'diagnostic':e.detail})
             except (ValueError,KeyError,TypeError) as e: self.respond(400,{'error':str(e)})
             except Exception: self.respond(502,{'error':'AdGuard no confirmó la operación. Recarga para revisar el estado; los permisos temporales pendientes se reintentarán.'})
 
