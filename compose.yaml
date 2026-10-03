@@ -1,0 +1,19 @@
+services:
+  companion:
+    image: ${DOCKERHUB_USERNAME:?Define DOCKERHUB_USERNAME en .env}/adguard-familia:${IMAGE_TAG:-latest}
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:8080:8080"
+    env_file: .env
+    volumes:
+      - companion-data:/data
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+volumes:
+  companion-data:
