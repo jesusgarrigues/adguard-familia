@@ -1,0 +1,175 @@
+"""Local accounts, scoped permissions, sessions and approval requests."""
+import hashlib, hmac, json, secrets, sqlite3, threading, time
+from pathlib import Path
+
+ROLES={'admin','responsable','solicitante','observador'}
+LOCK=threading.RLock()
+DB=None
+
+class Forbidden(PermissionError): pass
+
+
+def init(folder):
+    global DB
+    DB=sqlite3.connect(Path(folder)/'accounts.db',check_same_thread=False)
+    DB.row_factory=sqlite3.Row
+    DB.executescript('''CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY, username TEXT UNIQUE, password TEXT, role TEXT, clients TEXT, edit_policy INTEGER, max_minutes INTEGER, active INTEGER);
+    CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,user_id INTEGER,csrf TEXT,expires REAL);
+    CREATE TABLE IF NOT EXISTS requests(id INTEGER PRIMARY KEY,user_id INTEGER,client TEXT,service TEXT,minutes INTEGER,reason TEXT,status TEXT,created REAL,reviewer INTEGER,reviewed REAL,approved_minutes INTEGER);
+    CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY,time REAL,user_id INTEGER,action TEXT,detail TEXT);
+    CREATE TABLE IF NOT EXISTS attempts(key TEXT PRIMARY KEY,count INTEGER,until REAL);''')
+    DB.commit()
+
+
+def password_hash(password):
+    if not isinstance(password,str) or len(password)<12 or len(password)>512: raise ValueError('La contraseña debe tener entre 12 y 512 caracteres')
+    salt=secrets.token_hex(16)
+    digest=hashlib.scrypt(password.encode(),salt=bytes.fromhex(salt),n=16384,r=8,p=1).hex()
+    return salt+':'+digest
+
+
+def verify(password,stored):
+    salt,digest=stored.split(':')
+    return hmac.compare_digest(hashlib.scrypt(password.encode(),salt=bytes.fromhex(salt),n=16384,r=8,p=1).hex(),digest)
+
+
+def public(row):
+    d=dict(row)
+    d.pop('password',None)
+    d['clients']=json.loads(d['clients']);d['edit_policy']=bool(d['edit_policy']);d['active']=bool(d['active'])
+    return d
+
+
+def configured(): return DB.execute('SELECT 1 FROM users LIMIT 1').fetchone() is not None
+
+
+def audit(user,action,detail):
+    DB.execute('INSERT INTO audit(time,user_id,action,detail) VALUES(?,?,?,?)',(time.time(),user['id'] if user else None,action,json.dumps(detail,ensure_ascii=False)))
+    DB.execute('DELETE FROM audit WHERE id NOT IN (SELECT id FROM audit ORDER BY id DESC LIMIT 5000)');DB.commit()
+
+
+def bootstrap(token,expected,username,password):
+    with LOCK:
+        if configured(): raise Forbidden('El administrador inicial ya está creado')
+        if not expected or not hmac.compare_digest(str(token),expected): raise Forbidden('La clave inicial APP_TOKEN es incorrecta')
+        return save_user(None,{'username':username,'password':password,'role':'admin','clients':[],'edit_policy':True,'max_minutes':1440,'active':True},bootstrap=True)
+
+
+def save_user(actor,body,bootstrap=False):
+    if not bootstrap: require(actor,'admin')
+    with LOCK:
+        uid=body.get('id');old=DB.execute('SELECT * FROM users WHERE id=?',(uid,)).fetchone() if uid else None
+        if uid and not old: raise ValueError('Usuario desconocido')
+        name=body.get('username',old['username'] if old else '').strip().lower()
+        role=body.get('role',old['role'] if old else 'solicitante')
+        clients=body.get('clients',json.loads(old['clients']) if old else [])
+        duration=body.get('max_minutes',old['max_minutes'] if old else 120)
+        edit=body.get('edit_policy',bool(old['edit_policy']) if old else False)
+        active=body.get('active',bool(old['active']) if old else True)
+        if not name or len(name)>80 or role not in ROLES: raise ValueError('Usuario o rol inválido')
+        if not isinstance(clients,list) or any(not isinstance(x,str) or not x for x in clients): raise ValueError('Asignación de clientes inválida')
+        if type(duration) is not int or not 1<=duration<=1440 or type(edit) is not bool or type(active) is not bool: raise ValueError('Permisos inválidos')
+        if old and old['role']=='admin' and old['active'] and (role!='admin' or not active):
+            if DB.execute("SELECT count(*) FROM users WHERE role='admin' AND active=1").fetchone()[0]<=1: raise ValueError('Debe permanecer al menos un administrador activo')
+        pwd=password_hash(body['password']) if body.get('password') else old['password'] if old else None
+        if not pwd: raise ValueError('Contraseña obligatoria')
+        try:
+            if old: DB.execute('UPDATE users SET username=?,password=?,role=?,clients=?,edit_policy=?,max_minutes=?,active=? WHERE id=?',(name,pwd,role,json.dumps(clients),int(edit),duration,int(active),uid))
+            else: uid=DB.execute('INSERT INTO users(username,password,role,clients,edit_policy,max_minutes,active) VALUES(?,?,?,?,?,?,?)',(name,pwd,role,json.dumps(clients),int(edit),duration,int(active))).lastrowid
+        except sqlite3.IntegrityError: raise ValueError('Ese nombre de usuario ya existe')
+        if old: DB.execute('DELETE FROM sessions WHERE user_id=?',(uid,))
+        DB.commit();audit(actor,'user_saved',{'id':uid,'role':role,'clients':clients,'active':active})
+        return public(DB.execute('SELECT * FROM users WHERE id=?',(uid,)).fetchone())
+
+
+def login(username,password,ip):
+    if not isinstance(username,str) or not isinstance(password,str) or len(password)>512: raise Forbidden('Credenciales incorrectas')
+    with LOCK:
+        now=time.time();key=hashlib.sha256((ip+'|'+username.lower()).encode()).hexdigest()
+        attempt=DB.execute('SELECT * FROM attempts WHERE key=?',(key,)).fetchone()
+        if attempt and attempt['until']>now and attempt['count']>=5: raise Forbidden('Demasiados intentos. Espera 15 minutos')
+        row=DB.execute('SELECT * FROM users WHERE username=?',(username.strip().lower(),)).fetchone()
+        if not row or not row['active'] or not verify(password,row['password']):
+            count=attempt['count']+1 if attempt and attempt['until']>now else 1
+            DB.execute('INSERT OR REPLACE INTO attempts VALUES(?,?,?)',(key,count,now+900));DB.commit();raise Forbidden('Credenciales incorrectas')
+        DB.execute('DELETE FROM attempts WHERE key=?',(key,));DB.execute('DELETE FROM sessions WHERE expires<?',(now,))
+        token=secrets.token_urlsafe(32);csrf=secrets.token_urlsafe(24)
+        DB.execute('INSERT INTO sessions VALUES(?,?,?,?)',(hashlib.sha256(token.encode()).hexdigest(),row['id'],csrf,now+43200));DB.commit()
+        audit(public(row),'login',{})
+        return token,csrf,public(row)
+
+
+def session(token):
+    with LOCK:
+        row=DB.execute('SELECT u.*,s.csrf FROM sessions s JOIN users u ON s.user_id=u.id WHERE s.token=? AND s.expires>? AND u.active=1',(hashlib.sha256(token.encode()).hexdigest(),time.time())).fetchone()
+        if not row: return None
+        result=public(row);return result
+
+
+def logout(token):
+    with LOCK: DB.execute('DELETE FROM sessions WHERE token=?',(hashlib.sha256(token.encode()).hexdigest(),));DB.commit()
+
+
+def require(user,*roles):
+    if not user or user['role'] not in roles: raise Forbidden('Tu rol no permite esta operación')
+
+
+def scoped(user,client):
+    if user['role']!='admin' and client not in user['clients']: raise Forbidden('No tienes acceso a este cliente')
+
+
+def grant(user,client,minutes=None,edit=False):
+    require(user,'admin','responsable');scoped(user,client)
+    if edit and user['role']!='admin' and not user['edit_policy']: raise Forbidden('No tienes permiso para editar restricciones permanentes')
+    if minutes is not None and (type(minutes) is not int or not 1<=minutes<=user['max_minutes']): raise ValueError('La duración supera tu límite de '+str(user['max_minutes'])+' minutos')
+
+
+def request_access(user,body,validate):
+    require(user,'solicitante');client,service,minutes=body['client'],body['service'],body['minutes'];scoped(user,client)
+    if type(minutes) is not int or not 1<=minutes<=1440: raise ValueError('Duración inválida')
+    reason=body.get('reason','')
+    if not isinstance(reason,str) or len(reason)>1000: raise ValueError('Motivo demasiado largo')
+    validate(client,service)
+    with LOCK:
+        if DB.execute("SELECT 1 FROM requests WHERE user_id=? AND client=? AND service=? AND status='pending'",(user['id'],client,service)).fetchone(): raise ValueError('Ya tienes una solicitud pendiente para esta restricción')
+        rid=DB.execute("INSERT INTO requests(user_id,client,service,minutes,reason,status,created) VALUES(?,?,?,?,?,'pending',?)",(user['id'],client,service,minutes,reason,time.time())).lastrowid
+        DB.commit();audit(user,'request_created',{'id':rid,'client':client,'service':service,'minutes':minutes});return rid
+
+
+def requests_for(user):
+    with LOCK:
+        DB.execute("UPDATE requests SET status='expired' WHERE status='pending' AND created<?",(time.time()-86400,));DB.commit()
+        rows=[dict(r) for r in DB.execute('SELECT r.*,u.username FROM requests r JOIN users u ON r.user_id=u.id ORDER BY r.id DESC LIMIT 1000')]
+    return [r for r in rows if user['role']=='admin' or (r['user_id']==user['id'] if user['role']=='solicitante' else r['client'] in user['clients'])]
+
+
+def review(user,body,permit):
+    require(user,'admin','responsable')
+    with LOCK:
+        row=DB.execute('SELECT * FROM requests WHERE id=?',(body['id'],)).fetchone()
+        if not row: raise ValueError('Solicitud desconocida')
+        grant(user,row['client']);decision=body['decision']
+        if row['status']!='pending': raise ValueError('La solicitud ya se ha resuelto')
+        if row['created']<time.time()-86400: raise ValueError('La solicitud ha caducado')
+        if decision not in ('approve','reject'): raise ValueError('Decisión inválida')
+        minutes=body.get('minutes',row['minutes'])
+        if decision=='approve':
+            grant(user,row['client'],minutes)
+            # Persist approval before contacting AdGuard. The caller persists grant intent.
+            DB.execute("UPDATE requests SET status='approved',reviewer=?,reviewed=?,approved_minutes=? WHERE id=?",(user['id'],time.time(),minutes,row['id']));DB.commit()
+            audit(user,'request_approved',{'id':row['id'],'client':row['client'],'minutes':minutes})
+            try: permit(row['client'],row['service'],minutes)
+            except Exception:
+                DB.execute("UPDATE requests SET status='approval_error' WHERE id=?",(row['id'],));DB.commit()
+                raise
+        else:
+            DB.execute("UPDATE requests SET status='rejected',reviewer=?,reviewed=? WHERE id=?",(user['id'],time.time(),row['id']));DB.commit();audit(user,'request_rejected',{'id':row['id']})
+
+
+def withdraw(user,rid):
+    require(user,'solicitante')
+    with LOCK:
+        row=DB.execute('SELECT * FROM requests WHERE id=?',(rid,)).fetchone()
+        if not row or row['user_id']!=user['id']: raise Forbidden('Esta solicitud no te pertenece')
+        if row['status']!='pending': raise ValueError('La solicitud ya se ha resuelto')
+        DB.execute("UPDATE requests SET status='withdrawn' WHERE id=?",(rid,));DB.commit();audit(user,'request_withdrawn',{'id':rid})

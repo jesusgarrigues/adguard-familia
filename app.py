@@ -5,10 +5,13 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
+from http.cookies import SimpleCookie
+import auth
 
 ROOT = Path(__file__).parent
 DATA = Path(os.getenv('DATA_DIR', '/data'))
 DATA.mkdir(parents=True, exist_ok=True)
+auth.init(DATA)
 TOKEN = os.environ.get('APP_TOKEN', '')
 LOCK = threading.RLock()
 DB = sqlite3.connect(DATA / 'state.db', check_same_thread=False)
@@ -373,6 +376,32 @@ def state():
     return {'clients':info['clients'],'auto_clients':info.get('auto_clients',[]),'supported_tags':info.get('supported_tags',[]),'base_clients':bases,'effective':{c['name']:effective(c,g) for c in info['clients']},'base_effective':{n:effective(c,g) for n,c in bases.items()},'services':api('blocked_services/all')['blocked_services'],'global_config':g,'leases':[dict(zip(('client','service','expires'),r)) for r in DB.execute('SELECT * FROM leases')],'events':[dict(zip(('id','time','client','service','domain','kind'),r)) for r in DB.execute('SELECT * FROM events ORDER BY id DESC LIMIT 100')],'error':LAST_ERROR,'server':public_server(),'demo':server_config()['demo']}
 
 
+def scoped_state(user):
+    data=state()
+    allowed={c['name'] for c in data['clients'] if user['role']=='admin' or c['name'] in user['clients']}
+    data['clients']=[c for c in data['clients'] if c['name'] in allowed]
+    for key in ('base_clients','effective','base_effective'): data[key]={k:v for k,v in data[key].items() if k in allowed}
+    data['leases']=[l for l in data['leases'] if l['client'] in allowed]
+    data['events']=[e for e in data['events'] if e['client'] in allowed] if user['role']!='solicitante' else []
+    if user['role']!='admin':
+        data['server']={};data['auto_clients']=[];data['error']=''
+        if user['role']!='responsable' or not user['edit_policy']:
+            data['global_config']={'protection_enabled':data['global_config']['protection_enabled']}
+            data['clients']=[{'name':c['name'],'ids':c['ids']} for c in data['clients']]
+            data['base_clients']={name:{k:v for k,v in c.items() if k in ('name','ids','use_global_settings','use_global_blocked_services','ignore_querylog')} for name,c in data['base_clients'].items()}
+    data['requests']=auth.requests_for(user)
+    return data
+
+
+def validate_request(client,service):
+    clients={c['name']:c for c in api('clients')['clients']}
+    if client not in clients: raise ValueError('Cliente desconocido')
+    base=(baseline_for(client) or {}).get('base',clients[client])
+    eff=effective(base,global_config())
+    enabled=eff['safe_search'].get('enabled',False) if service=='@safesearch' else eff[RESTRICTIONS[service]] if service in RESTRICTIONS else service in eff['blocked_services']
+    if not enabled: raise ValueError('Esta restricción no está activada')
+
+
 def worker():
     global LAST_ERROR
     while True:
@@ -391,50 +420,84 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(status);self.send_header('Content-Type',mime+'; charset=utf-8');self.send_header('Cache-Control','no-store');self.send_header('X-Content-Type-Options','nosniff');self.send_header('Referrer-Policy','no-referrer');self.end_headers();self.wfile.write(content)
         except (BrokenPipeError,ConnectionResetError):
             logging.info('El navegador o proxy cerró la solicitud antes de recibir la respuesta')
-    def authorized(self): return bool(TOKEN) and hmac.compare_digest(self.headers.get('Authorization',''),'Bearer '+TOKEN)
+    def cookie_token(self):
+        cookie=SimpleCookie()
+        try: cookie.load(self.headers.get('Cookie',''))
+        except Exception: return ''
+        return cookie['session'].value if 'session' in cookie else ''
+    def user(self): return auth.session(self.cookie_token())
+    def session_response(self,token,csrf,user):
+        self.send_response(200)
+        secure='; Secure' if self.headers.get('X-Forwarded-Proto','').lower()=='https' else ''
+        self.send_header('Set-Cookie','session='+token+'; Path=/; HttpOnly; SameSite=Strict; Max-Age=43200'+secure)
+        self.send_header('Content-Type','application/json');self.send_header('Cache-Control','no-store');self.end_headers()
+        self.wfile.write(json.dumps({'user':user,'csrf':csrf}).encode())
+    def body(self):
+        length=int(self.headers.get('Content-Length','0'))
+        if not 0<length<=131072: raise ValueError('Solicitud inválida')
+        result=json.loads(self.rfile.read(length))
+        if not isinstance(result,dict): raise ValueError('Solicitud inválida')
+        return result
     def do_GET(self):
-        if self.path=='/': return self.respond(200,(ROOT/'index.html').read_bytes(),'text/html')
-        if not self.authorized(): return self.respond(401,{'error':'Clave de acceso incorrecta'})
-        if self.path=='/api/diagnostics': return self.respond(200,{'entries':list(DIAGNOSTICS),'last_error':LAST_ERROR})
-        if self.path=='/api/server': return self.respond(200,public_server())
-        with LOCK:
-            try:
-                if self.path=='/api/server': return self.respond(200,public_server())
+        assets={'/':('index.html','text/html'),'/manifest.webmanifest':('manifest.webmanifest','application/manifest+json'),'/sw.js':('sw.js','application/javascript'),'/icon.svg':('icon.svg','image/svg+xml'),'/icon-192.png':('icon-192.png','image/png'),'/icon-512.png':('icon-512.png','image/png')}
+        if self.path in assets:
+            file,mime=assets[self.path];return self.respond(200,(ROOT/file).read_bytes(),mime)
+        if self.path=='/api/auth/status': return self.respond(200,{'configured':auth.configured()})
+        user=self.user()
+        if not user: return self.respond(401,{'error':'Inicia sesión para continuar'})
+        try:
+            if self.path=='/api/me': return self.respond(200,{'user':user,'csrf':user['csrf']})
+            if self.path in ('/api/diagnostics','/api/server','/api/users','/api/audit'):
+                auth.require(user,'admin')
                 if self.path=='/api/diagnostics': return self.respond(200,{'entries':list(DIAGNOSTICS),'last_error':LAST_ERROR})
-                if self.path=='/api/state': return self.respond(200,state())
-                self.respond(404,{'error':'No encontrado'})
-            except AdGuardError as e: self.respond(502,{'error':str(e),'diagnostic':e.detail})
-            except Exception: self.respond(502,{'error':'No se puede leer AdGuard. Revisa el diagnóstico en Servidor.'})
+                if self.path=='/api/server': return self.respond(200,public_server())
+                if self.path=='/api/users': return self.respond(200,{'users':[auth.public(r) for r in auth.DB.execute('SELECT * FROM users')]})
+                if self.path=='/api/audit': return self.respond(200,{'entries':[dict(r) for r in auth.DB.execute('SELECT a.*,u.username FROM audit a LEFT JOIN users u ON a.user_id=u.id ORDER BY a.id DESC LIMIT 200')]})
+            if self.path=='/api/requests': return self.respond(200,{'requests':auth.requests_for(user)})
+            if self.path=='/api/state':
+                with LOCK: return self.respond(200,scoped_state(user))
+            self.respond(404,{'error':'No encontrado'})
+        except auth.Forbidden as e: self.respond(403,{'error':str(e)})
+        except AdGuardError as e: self.respond(502,{'error':str(e),'diagnostic':e.detail})
+        except Exception: self.respond(502,{'error':'No se puede leer AdGuard. Revisa el diagnóstico en Servidor.'})
     def do_POST(self):
-        if not self.authorized(): return self.respond(401,{'error':'Acceso denegado'})
-        if self.path=='/api/server/test':
-            try:
-                length=int(self.headers.get('Content-Length','0'))
-                if not 0<length<=131072: raise ValueError('Solicitud inválida')
-                self.respond(200,save_server(json.loads(self.rfile.read(length)),True))
-            except AdGuardError as e: self.respond(502,{'error':str(e),'diagnostic':e.detail})
-            except (ValueError,KeyError,TypeError) as e: self.respond(400,{'error':str(e)})
-            except Exception: self.respond(502,{'error':'No se pudo completar el diagnóstico de conexión.'})
-            return
-        with LOCK:
-            try:
-                length=int(self.headers.get('Content-Length','0'))
-                if not 0<length<=131072: raise ValueError('Solicitud inválida')
-                body=json.loads(self.rfile.read(length))
-                if not isinstance(body,dict): raise ValueError('Solicitud inválida')
+        try:
+            body=self.body()
+            if self.path=='/api/auth/setup':
+                auth.bootstrap(body.get('token',''),TOKEN,body['username'],body['password'])
+                token,csrf,user=auth.login(body['username'],body['password'],self.client_address[0]);return self.session_response(token,csrf,user)
+            if self.path=='/api/auth/login':
+                token,csrf,user=auth.login(body['username'],body['password'],self.client_address[0]);return self.session_response(token,csrf,user)
+            user=self.user()
+            if not user: return self.respond(401,{'error':'Inicia sesión para continuar'})
+            if not hmac.compare_digest(self.headers.get('X-CSRF-Token',''),user['csrf']): raise auth.Forbidden('Sesión inválida. Vuelve a entrar')
+            if self.path=='/api/auth/logout': auth.logout(self.cookie_token());return self.respond(200,{'ok':True})
+            if self.path=='/api/users': return self.respond(200,{'user':auth.save_user(user,body)})
+            if self.path in ('/api/global','/api/server','/api/server/test','/api/client/add'): auth.require(user,'admin')
+            if self.path=='/api/server/test': return self.respond(200,save_server(body,True))
+            if self.path=='/api/request/withdraw': auth.withdraw(user,body['id']);return self.respond(200,{'ok':True})
+            if self.path=='/api/permit': auth.grant(user,body['client'],body['minutes'])
+            if self.path=='/api/cancel': auth.grant(user,body['client'])
+            if self.path=='/api/client': auth.grant(user,body['client'],edit=True)
+            if self.path=='/api/request': auth.require(user,'solicitante');auth.scoped(user,body['client'])
+            if self.path=='/api/request/review': auth.require(user,'admin','responsable')
+            with LOCK:
                 result={'ok':True}
                 if self.path=='/api/permit': permit(body['client'],body['service'],body['minutes'])
-                elif self.path=='/api/cancel':
-                    DB.execute('UPDATE leases SET expires=0 WHERE client=? AND service=?',(body['client'],body['service']));DB.commit();reconcile()
+                elif self.path=='/api/cancel': DB.execute('UPDATE leases SET expires=0 WHERE client=? AND service=?',(body['client'],body['service']));DB.commit();reconcile()
                 elif self.path=='/api/client': save_client(body['client'],body['patch'])
                 elif self.path=='/api/client/add': save_client('',body['patch'],True)
                 elif self.path=='/api/global': save_global(body['patch'])
-                elif self.path in ('/api/server','/api/server/test'): result=save_server(body,self.path.endswith('/test'))
+                elif self.path=='/api/server': result=save_server(body)
+                elif self.path=='/api/request': result={'ok':True,'id':auth.request_access(user,body,validate_request)}
+                elif self.path=='/api/request/review': auth.review(user,body,permit)
                 else: return self.respond(404,{'error':'No encontrado'})
+                if self.path not in ('/api/request','/api/request/review'): auth.audit(user,self.path,{'client':body.get('client'),'service':body.get('service'),'minutes':body.get('minutes')})
                 self.respond(200,result)
-            except AdGuardError as e: self.respond(502,{'error':str(e),'diagnostic':e.detail})
-            except (ValueError,KeyError,TypeError) as e: self.respond(400,{'error':str(e)})
-            except Exception: self.respond(502,{'error':'AdGuard no confirmó la operación. Recarga para revisar el estado; los permisos temporales pendientes se reintentarán.'})
+        except auth.Forbidden as e: self.respond(403,{'error':str(e)})
+        except AdGuardError as e: self.respond(502,{'error':str(e),'diagnostic':e.detail})
+        except (ValueError,KeyError,TypeError) as e: self.respond(400,{'error':str(e)})
+        except Exception: self.respond(502,{'error':'La operación no se pudo completar. Revisa solicitudes y permisos antes de reintentar.'})
 
 
 if __name__=='__main__':

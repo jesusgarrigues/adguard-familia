@@ -1,5 +1,16 @@
 services:
+  preparar-datos:
+    build: .
+    image: adguard-familia:local
+    user: "0:0"
+    command: ["sh", "-c", "chown -R 10001:10001 /data"]
+    volumes:
+      - companion-data:/data
+    restart: "no"
   companion:
+    depends_on:
+      preparar-datos:
+        condition: service_completed_successfully
     build: .
     image: adguard-familia:local
     ports:

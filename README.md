@@ -15,7 +15,7 @@ docker compose pull
 docker compose up -d
 ```
 
-Abre http://localhost:8080, introduce APP_TOKEN y configura la URL, usuario y contraseña de AdGuard en **Servidor**. Puedes probar la conexión antes de guardarla. La configuración se conserva en el volumen; la contraseña no se devuelve al navegador. Puedes usar variables ADGUARD_* en .env como configuración inicial.
+Abre http://localhost:8080, crea el primer administrador usando APP_TOKEN y configura la URL, usuario y contraseña de AdGuard en **Servidor**. Puedes probar la conexión antes de guardarla. La configuración se conserva en el volumen; la contraseña no se devuelve al navegador. Puedes usar variables ADGUARD_* en .env como configuración inicial.
 
 Para acceder desde tu LAN, configura `BIND_ADDRESS=0.0.0.0` y abre la IP del servidor. Usa un proxy inverso con HTTPS para acceso remoto y notificaciones de navegador desde la LAN. La URL de AdGuard incluye su puerto web, no su puerto DNS. `localhost` dentro del contenedor apunta a la app; para otro contenedor usa una red Docker compartida y el nombre de servicio.
 
@@ -80,3 +80,38 @@ No subas el token a archivos ni commits. Crea el repositorio Docker Hub `adguard
 ## Diagnóstico de conexión
 
 En **Servidor**, usa **Probar conexión** y **Actualizar diagnóstico**. El panel distingue HTTP 401/403/404, timeout, DNS, conexión rechazada, certificados y respuestas no JSON, indicando el endpoint. Los últimos 100 resultados se conservan en memoria; los fallos se registran también con `docker compose logs --tail=100 adguard-familia`. No se registran contraseñas ni cabeceras de autorización. La actualización automática se pausa en Servidor y mientras se editan formularios.
+
+## Usuarios, roles y solicitudes
+
+Al actualizar se conservan los clientes, la conexión y los permisos. La primera entrada pide APP_TOKEN para crear un administrador con usuario y contraseña (mínimo 12 caracteres). Una vez creado, APP_TOKEN deja de autorizar la API; todas las personas entran con su cuenta.
+
+En **Usuarios**, el administrador crea cuentas y asigna clientes:
+
+| Rol | Acceso |
+| --- | --- |
+| Administrador | Usuarios, servidor, ajustes globales, todos los clientes, permisos y auditoría. |
+| Responsable | Aprobar/rechazar solicitudes y conceder/cancelar permisos en clientes asignados. Edición permanente solo si se activa expresamente. |
+| Solicitante | Restricciones y permisos de clientes asignados; solicitar acceso y retirar sus solicitudes pendientes. Nunca desbloquea por su cuenta. No ve historial DNS. |
+| Observador | Consulta de dispositivos asignados, actividad y permisos; sin cambios ni aprobaciones. |
+
+Los límites de aprobación se configuran por cuenta responsable. No hay cupos automáticos ni autoaprobación. Las solicitudes caducan a las 24 horas; el permiso comienza al concederse y cada ampliación necesita aprobación. La pantalla **Solicitudes** permite al responsable ajustar los minutos y decidir. Un error de aplicación se muestra para revisar los permisos antes de reintentar. **Registro** conserva los últimos 5000 accesos/cambios/aprobaciones. No registra contraseñas.
+
+Las contraseñas se guardan con scrypt y sal individual. Las sesiones usan cookies HttpOnly, SameSite=Strict y caducan a las 12 horas. Al modificar una cuenta se cierran sus sesiones. El rol, la asignación y el límite se verifican en el servidor; ocultar botones no es la autorización. Los POST autenticados verifican un token CSRF. El proxy HTTPS debe enviar `X-Forwarded-Proto: https` para marcar la cookie Secure.
+
+## Instalar en Android e iPhone
+
+Es una app web instalable (PWA), no un paquete APK ni una app de App Store. Publica la instalación doméstica detrás de HTTPS con un certificado confiable.
+
+- **Android:** abre el panel HTTPS en Chrome, menú → Instalar aplicación o Añadir a pantalla de inicio.
+- **iPhone:** abre el panel HTTPS en Safari, Compartir → Añadir a pantalla de inicio.
+
+El diseño se adapta al móvil, incluye iconos, manifest y modo independiente. No se almacena contenido privado en caché y se muestra una página de desconexión si el servidor no responde. La gestión y las aprobaciones necesitan conexión. Los avisos de nuevas solicitudes y bloqueos requieren permiso del navegador y mantener el panel abierto. No incluye push en segundo plano; el soporte de notificaciones varía en iOS.
+
+Para actualizar la imagen sin borrar cuentas ni configuración:
+
+```sh
+docker compose pull
+docker compose up -d
+```
+
+Después recarga el navegador. No borres los volúmenes. Los archivos de cuentas, sesiones y auditoría se guardan en `/data/accounts.db`.

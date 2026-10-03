@@ -15,7 +15,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-      - run: python -m unittest -v test_app.py test_diagnostics.py
+      - run: python -m unittest -v test_app.py test_diagnostics.py test_auth.py
+      - run: python test_http.py
       - uses: actions/setup-node@v4
         with:
           node-version: '22'

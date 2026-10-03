@@ -1,5 +1,15 @@
 services:
+  preparar-datos:
+    image: ${DOCKERHUB_USERNAME:?Define DOCKERHUB_USERNAME en .env}/adguard-familia:${IMAGE_TAG:-latest}
+    user: "0:0"
+    command: ["sh", "-c", "chown -R 10001:10001 /data"]
+    volumes:
+      - companion-data:/data
+    restart: "no"
   companion:
+    depends_on:
+      preparar-datos:
+        condition: service_completed_successfully
     image: ${DOCKERHUB_USERNAME:?Define DOCKERHUB_USERNAME en .env}/adguard-familia:${IMAGE_TAG:-latest}
     ports:
       - "${BIND_ADDRESS:-127.0.0.1}:8080:8080"
