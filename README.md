@@ -19,7 +19,7 @@ Abre http://localhost:8080, introduce APP_TOKEN y configura la URL, usuario y co
 
 Para acceder desde tu LAN, configura `BIND_ADDRESS=0.0.0.0` y abre la IP del servidor. Usa un proxy inverso con HTTPS para acceso remoto y notificaciones de navegador desde la LAN. La URL de AdGuard incluye su puerto web, no su puerto DNS. `localhost` dentro del contenedor apunta a la app; para otro contenedor usa una red Docker compartida y el nombre de servicio.
 
-Las imágenes publicadas por el workflow admiten `linux/amd64` y `linux/arm64`. `latest` se actualiza al publicar una etiqueta `v*`; `edge` sigue `main`. Puedes fijar `IMAGE_TAG` a una versión publicada.
+Las imágenes publicadas por el workflow admiten `linux/amd64` y `linux/arm64`. `latest` y `edge` se actualizan tras superar las pruebas en `main`; las etiquetas `v*` añaden versiones numeradas. Puedes fijar `IMAGE_TAG` a una versión publicada.
 
 ## Clientes y herencia
 
