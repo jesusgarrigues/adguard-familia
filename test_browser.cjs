@@ -92,7 +92,7 @@ const calls=[];let adguardDown=false;
  await page.locator('[data-client-card="iMac de Emma"]').click();assert.equal(await page.locator('#adguard-dialog-backdrop').getByRole('button',{name:/Ajustes/}).count(),0);assert.ok(await page.locator('#adguard-dialog-backdrop').getByRole('button',{name:'Solicitar',exact:true}).count()>0);assert.equal(await page.locator('#adguard-dialog-backdrop').getByRole('button',{name:'Permitir',exact:true}).count(),0);
  await page.locator('#adguard-dialog-backdrop').getByRole('button',{name:'Cerrar',exact:true}).click();
  await page.locator('[data-console="nintendo:ABC"]').click();
- assert.ok(await page.getByRole('button',{name:'Solicitar tiempo',exact:true}).isVisible());
+ assert.ok(await page.locator('#nintendo-dialog-backdrop').getByRole('button',{name:'Solicitar tiempo',exact:true}).isVisible());
  assert.equal(await page.getByRole('button',{name:'Añadir tiempo',exact:true}).count(),0);
  assert.equal(await page.getByRole('button',{name:'Retirar ampliación de hoy',exact:true}).count(),0);
  await page.locator('#nintendo-dialog-backdrop').getByRole('button',{name:'Cerrar',exact:true}).click();
