@@ -373,6 +373,7 @@ class Connector:
             ('confirmed_minutes', 'INTEGER NOT NULL DEFAULT 0'), ('native_expires_at', 'REAL'),
             ('expected_policy', 'TEXT'), ('policy_payload_hash', 'TEXT'),
             ('confirmation_with_bedtime', 'INTEGER'),
+            ('native_response_status', 'TEXT'), ('native_response_at', 'REAL'),
         ):
             if column not in columns:
                 self._db.execute(f'ALTER TABLE operations ADD COLUMN {column} {definition}')
@@ -562,6 +563,7 @@ class Connector:
     def _decorate(self, devices):
         result = copy.deepcopy(devices)
         for device in result:
+            device['last_read_at'] = self._updated
             pending = self._pending(device['key'])
             device['pending_operation'] = self._result(pending[0]) if pending else None
             device['can_grant'] = bool(device.get('can_grant')) and not pending
@@ -634,6 +636,12 @@ class Connector:
                 'steps_confirmed': row['chunk_index'] if row['model_version'] == 2 else int(row['status'] == 'confirmed'),
                 'night_only': bool(row['night_only']),
                 'confirmation_with_bedtime': None if row['confirmation_with_bedtime'] is None else bool(row['confirmation_with_bedtime']),
+                'last_step_acknowledged': bool(row['ack']),
+                'baseline_daily_extra_minutes': row['baseline_daily_extra'] if row['baseline_daily_extra'] is not None else row['baseline'],
+                'expected_daily_extra_minutes': row['expected_daily'] if row['model_version'] == 2 else row['expected'],
+                'baseline_bedtime': row['baseline_bedtime'], 'expected_bedtime': row['expected_bedtime'],
+                'native_response_status': row['native_response_status'], 'native_response_at': row['native_response_at'],
+                'waiting_seconds': max(0, int(self._clock() - row['created_at'])),
                 'created_at': row['created_at'], 'updated_at': row['updated_at']}
 
     def operation_status(self, operation_id):
@@ -678,6 +686,25 @@ class Connector:
                     self._finish(row['operation_id'], 'failed', 'La configuración actual de Nintendo entra en conflicto con el permiso. No se reenviará la operación ni se modificarán las restricciones permanentes.')
                     continue
             bedtime = device.get('effective_bedtime', device.get('bedtime'))
+            daily = device.get('daily_extra_minutes', extra)
+            expected_daily = row['expected_daily'] if row['model_version'] == 2 else row['expected']
+            baseline_daily = row['baseline_daily_extra'] if row['baseline_daily_extra'] is not None else row['baseline']
+            # A later cloud value can supersede an accepted additive request.
+            # Do NOT label that as our grant confirmed or continue its plan:
+            # another controller may have changed today's bonus. An old read
+            # (the baseline) still waits, as does any lost write response.
+            if row['kind'] == 'grant' and row['ack'] and (
+                    daily == -1 or (daily is not None and expected_daily is not None and daily > expected_daily)
+                    or (daily is not None and baseline_daily is not None and daily < baseline_daily)
+                    or bedtime not in (row['baseline_bedtime'], row['expected_bedtime'])):
+                self._finish(row['operation_id'], 'superseded',
+                             'El estado de Nintendo ha cambiado y ya no coincide con esta concesión. Seguimiento cerrado sin reenviar minutos; se muestra el presupuesto actual de Nintendo.')
+                continue
+            if row['kind'] == 'grant' and row['stage'] == 'ready_next' and (
+                    daily != expected_daily or bedtime != row['expected_bedtime']):
+                self._finish(row['operation_id'], 'superseded',
+                             'Nintendo ha cambiado el permiso tras un paso confirmado. Se han detenido los pasos restantes; revisa el presupuesto actual antes de conceder más.')
+                continue
             daily_matches = (device.get('daily_extra_minutes', extra) == row['expected_daily']) if row['model_version'] == 2 else extra == row['expected']
             if row['ack'] and daily_matches and bedtime == row['expected_bedtime']:
                 if row['model_version'] == 2 and row['kind'] == 'grant':
@@ -712,6 +739,32 @@ class Connector:
                     if row['model_version'] == 2 and row['stage'] == 'ready_next':
                         self._advance(row)
             return [self._result(row) for row in self._db.execute('SELECT * FROM operations WHERE status=?', ('pending',)).fetchall()]
+
+    def close_tracking(self, device_key, operation_id, *, acknowledge_uncertain,
+                       expected_daily_extra_minutes, expected_bedtime):
+        """Close local tracking after an adult checks Nintendo; NEVER mutate it."""
+        with self._lock:
+            if acknowledge_uncertain is not True:
+                raise ValueError('Confirma que has revisado Nintendo y que cerrar el seguimiento no retira ni añade tiempo.')
+            self._operation_id(operation_id)
+            _number(expected_daily_extra_minutes, minimum=-1)
+            if expected_bedtime is not None:
+                _time_minutes(expected_bedtime)
+            row = self._db.execute('SELECT * FROM operations WHERE operation_id=?', (operation_id,)).fetchone()
+            if not row or row['device_key'] != device_key or row['account_hash'] != self._account():
+                raise ValueError('El seguimiento no corresponde a esta consola y cuenta.')
+            if row['status'] != 'pending':
+                return self._result(row)  # idempotent, without closing a newer operation
+            device = self._validate(device_key, 5, for_cancel=True, allow_pending=True)
+            current = self._db.execute('SELECT * FROM operations WHERE operation_id=?', (operation_id,)).fetchone()
+            if current['status'] != 'pending':
+                return self._result(current)
+            if (device.get('daily_extra_minutes', device['extra_minutes']) != expected_daily_extra_minutes
+                    or device.get('effective_bedtime', device.get('bedtime')) != expected_bedtime):
+                raise NintendoError('El tiempo o la hora tope han cambiado. Actualiza y revisa Nintendo antes de cerrar el seguimiento.')
+            self._db.execute("UPDATE operations SET stage='closed_by_user' WHERE operation_id=?", (operation_id,))
+            return self._finish(operation_id, 'superseded',
+                                'Seguimiento cerrado por un responsable. No se ha confirmado esta concesión ni se ha añadido, retirado o reenviado tiempo. Se conserva el estado actual de Nintendo.')
 
     def _existing(self, operation_id, device_key, minutes, kind, extend_bedtime=False):
         self._operation_id(operation_id)
@@ -843,6 +896,8 @@ class Connector:
             accepted = ('SUCCESS', 'TO_ADDED') if kind == 'grant' else ('SUCCESS', 'TO_CANCELED')
             if status not in accepted:
                 return self._finish(operation_id, 'pending', 'Nintendo no ha confirmado el resultado. La operación no se reenviará automáticamente.')
+            self._db.execute('UPDATE operations SET native_response_status=?,native_response_at=? WHERE operation_id=?',
+                             (status, _timestamp(payload.get('updatedAt')), operation_id))
             self._finish(operation_id, 'pending', 'Nintendo ha aceptado la operación; esperando que la lectura confirme el tiempo.', ack=True)
         except Exception as error:
             status = str(getattr(error, 'status', ''))

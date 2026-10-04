@@ -436,7 +436,7 @@ def refresh_nintendo_requests():
             op=NINTENDO.operation_status('request:'+str(row['id']))
             # A crash before the connector persisted its ledger must never
             # trigger an automatic replay of an additive Nintendo grant.
-            status='approval_error' if not op else 'approved' if op.get('status')=='confirmed' else 'approval_error' if op.get('status')=='failed' else None
+            status='approval_error' if not op else 'approved' if op.get('status')=='confirmed' else 'approval_closed' if op.get('status')=='superseded' else 'approval_error' if op.get('status')=='failed' else None
             if status:
                 auth.DB.execute('UPDATE requests SET status=? WHERE id=?',(status,row['id']))
                 auth.audit(None,'nintendo_request_synced',{'id':row['id'],'status':status})
@@ -533,6 +533,14 @@ class Handler(BaseHTTPRequestHandler):
             if not user: return self.respond(401,{'error':'Inicia sesión para continuar'})
             if not hmac.compare_digest(self.headers.get('X-CSRF-Token',''),user['csrf']): raise auth.Forbidden('Sesión inválida. Vuelve a entrar')
             if self.path=='/api/auth/logout': auth.logout(self.cookie_token());return self.respond(200,{'ok':True})
+            if self.path=='/api/nintendo/operation/close':
+                auth.grant(user,body['client'])
+                if not str(body['client']).startswith('nintendo:'): raise ValueError('Consola Nintendo inválida')
+                result=NINTENDO.close_tracking(body['client'],body['operation_id'],
+                    acknowledge_uncertain=body.get('acknowledge_uncertain',False),
+                    expected_daily_extra_minutes=body['expected_daily_extra_minutes'],expected_bedtime=body['expected_bedtime'])
+                auth.audit(user,'nintendo_tracking_closed',{'client':body['client'],'operation_id':body['operation_id'],'status':result['status']})
+                return self.respond(200,result)
             if self.path=='/api/nintendo/policy':
                 auth.grant(user,body['client'],edit=True)
                 op=operation_key(user,body,'settings')

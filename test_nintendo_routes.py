@@ -137,13 +137,35 @@ class NintendoRoutes(unittest.TestCase):
         self.assertEqual(h.respond.call_args.args[0],200)
         self.assertEqual(auth.requests_for(self.child)[0]['status'],'approved')
     def test_worker_resolves_approval_without_replaying_cloud_write(self):
-        for state,expected in (({'status':'confirmed'},'approved'),({'status':'failed'},'approval_error'),(None,'approval_error'),({'status':'pending'},'approved_pending')):
+        for state,expected in (({'status':'confirmed'},'approved'),({'status':'failed'},'approval_error'),({'status':'superseded'},'approval_closed'),(None,'approval_error'),({'status':'pending'},'approved_pending')):
             rid=auth.request_access(self.child,{'client':'nintendo:switch1','service':'@nintendo','minutes':20},lambda c,s:None)
             auth.review(self.parent,{'id':rid,'decision':'approve','minutes':20},lambda c,s,m,**kw:{'status':'pending'})
             with patch.object(app.NINTENDO,'refresh_pending'),patch.object(app.NINTENDO,'operation_status',return_value=state),patch.object(app.NINTENDO,'grant') as grant:
                 app.refresh_nintendo_requests();grant.assert_not_called()
             row=auth.DB.execute('SELECT status FROM requests WHERE id=?',(rid,)).fetchone()
             self.assertEqual(row['status'],expected)
+
+    def test_closing_tracking_requires_adult_and_assigned_console_without_remote_write(self):
+        body={'client':'nintendo:switch1','operation_id':'direct:1:test','acknowledge_uncertain':True,'expected_daily_extra_minutes':75,'expected_bedtime':'20:00'}
+        observer=auth.save_user(self.admin,{'username':'observer','password':'password-observer123','role':'observador','clients':['nintendo:switch1']})
+        for user in (self.child,observer):
+            h=self.handler(user,'/api/nintendo/operation/close',body)
+            with patch.object(app.NINTENDO,'close_tracking') as close:h.do_POST();close.assert_not_called()
+            self.assertEqual(h.respond.call_args.args[0],403)
+        h=self.handler(self.parent,'/api/nintendo/operation/close',dict(body,client='nintendo:other'))
+        with patch.object(app.NINTENDO,'close_tracking') as close:h.do_POST();close.assert_not_called()
+        self.assertEqual(h.respond.call_args.args[0],403)
+        h=self.handler(self.parent,'/api/nintendo/operation/close',body)
+        with patch.object(app.NINTENDO,'close_tracking',return_value={'status':'superseded'}) as close,patch.object(app.NINTENDO,'grant') as grant,patch.object(app.NINTENDO,'cancel') as cancel:
+            h.do_POST();grant.assert_not_called();cancel.assert_not_called()
+            close.assert_called_once_with('nintendo:switch1','direct:1:test',acknowledge_uncertain=True,expected_daily_extra_minutes=75,expected_bedtime='20:00')
+        self.assertEqual(h.respond.call_args.args[0],200)
+
+    def test_immediate_superseded_approval_is_closed_not_marked_granted(self):
+        rid=auth.request_access(self.child,{'client':'nintendo:switch1','service':'@nintendo','minutes':20},lambda c,s:None)
+        result=auth.review(self.parent,{'id':rid,'decision':'approve'},lambda c,s,m,**kw:{'status':'superseded'})
+        self.assertEqual(result['status'],'superseded')
+        self.assertEqual(auth.DB.execute('SELECT status FROM requests WHERE id=?',(rid,)).fetchone()['status'],'approval_closed')
     def test_parent_can_explicitly_extend_bedtime_in_direct_grant(self):
         h=self.handler(self.parent,'/api/permit',{'client':'nintendo:switch1','service':'@nintendo','minutes':20,'operation_id':'a'*32,'extend_bedtime':True})
         with patch.object(app.NINTENDO,'grant',return_value={'status':'confirmed'}) as grant:h.do_POST()

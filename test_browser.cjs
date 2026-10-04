@@ -27,6 +27,11 @@ const calls=[];let adguardDown=false;
    if(url.pathname==='/api/state'&&adguardDown)return route.fulfill({status:502,contentType:'application/json',body:JSON.stringify({error:'AdGuard unavailable fixture'})});
    const path=url.pathname.slice(5);let body=null;
    if(req.method()==='POST'){body=req.postDataJSON();calls.push({path,body});}
+   if(path==='nintendo/operation/close'&&body){
+    native.devices[0].pending_operation=null;native.devices[0].can_grant=true;
+    native.devices[0].last_operation={operation_id:body.operation_id,status:'superseded',message:'Seguimiento cerrado sin reenviar tiempo.'};
+    return route.fulfill({contentType:'application/json',body:JSON.stringify(native.devices[0].last_operation)});
+   }
    const data=path==='me'?{user,csrf:'fixture-csrf'}:path==='state'?state:path==='nintendo/state'?native:path==='requests'?{requests}:path==='auth/status'?{configured:true}:path==='nintendo/config'?{configured:true,timezone:'Europe/Madrid'}:path==='server'?{url:'http://192.168.1.2:3000',username:'admin',demo:true}:path==='diagnostics'?{entries:[]}:body?{ok:true,status:['permit','cancel','nintendo/policy'].includes(path)?'confirmed':undefined}:{ok:true};
    return route.fulfill({contentType:'application/json',body:JSON.stringify(data)});
   }
@@ -112,6 +117,26 @@ const calls=[];let adguardDown=false;
  await page.waitForFunction(()=>!busy);
  const policy=calls.find(c=>c.path==='nintendo/policy');assert.ok(policy);assert.equal(policy.body.patch.daily.limit_minutes,0);assert.equal(policy.body.revision,'fixture-revision');
  await page.screenshot({path:shots+'/movil-nintendo-ajustes.png'});
+ native.devices[0].extra_minutes=native.devices[0].daily_extra_minutes=75;
+ native.devices[0].used_minutes=40;native.devices[0].remaining_minutes=native.devices[0].budget_remaining_minutes=35;
+ native.devices[0].can_grant=false;native.devices[0].can_cancel=false;native.devices[0].last_read_at=Date.now()/1000;
+ native.devices[0].pending_operation={operation_id:'direct:1:pending-fixture',kind:'grant',status:'pending',stage:'update_sent',minutes:15,confirmed_minutes:0,last_step_acknowledged:true,baseline_daily_extra_minutes:45,expected_daily_extra_minutes:60,expected_bedtime:'20:00',native_response_status:'TO_ADDED',waiting_seconds:300};
+ await page.evaluate(()=>{dirty=false;nintendoModalTab='extra';return refreshNintendoOnly()});
+ const tracking=page.locator('#nintendo-dialog-backdrop');
+ assert.ok((await tracking.innerText()).includes('Aceptada · Falta verificar en Nintendo'));
+ await tracking.locator('summary').filter({hasText:'Detalles del seguimiento'}).click();
+ assert.ok((await tracking.locator('pre').innerText()).includes('"observed_daily_extra": 75'));
+ assert.ok((await tracking.locator('pre').innerText()).includes('"expected_daily_extra": 60'));
+ const nativeWrites=calls.filter(c=>['permit','cancel','nintendo/policy'].includes(c.path)).length;
+ page.once('dialog',async d=>{assert.ok(d.message().includes('No se añade, retira ni reenvía tiempo'));await d.accept()});
+ await tracking.getByRole('button',{name:'Cerrar seguimiento',exact:true}).click();
+ await page.waitForFunction(()=>!busy);
+ assert.equal(calls.filter(c=>['permit','cancel','nintendo/policy'].includes(c.path)).length,nativeWrites);
+ const closed=calls.find(c=>c.path==='nintendo/operation/close');assert.equal(closed.body.expected_daily_extra_minutes,75);assert.equal(closed.body.acknowledge_uncertain,true);
+ assert.equal(await tracking.getByRole('button',{name:'Cerrar seguimiento',exact:true}).count(),0);
+ assert.ok((await tracking.innerText()).includes('Seguimiento cerrado sin reenviar tiempo'));
+ assert.equal(native.devices[0].extra_minutes,75);
+ await page.screenshot({path:shots+'/movil-nintendo-recuperado.png'});
 
  await page.locator('#nintendo-dialog-backdrop').getByRole('button',{name:'Cerrar',exact:true}).click();
  await page.evaluate(()=>{me={...me,role:'solicitante',id:2,clients:['iMac de Emma','nintendo:ABC']};go('clients')});

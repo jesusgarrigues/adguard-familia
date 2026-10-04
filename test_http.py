@@ -16,6 +16,12 @@ fixed_time=datetime(2026,9,4,18,0,tzinfo=ZoneInfo('Europe/Madrid')).timestamp()
 def fake_backend():
     backend=FakeBackend()
     backend.mode='next_step'
+    original_confirm=backend.confirm
+    async def confirm(device_id,minutes,**kwargs):
+        result=await original_confirm(device_id,minutes,**kwargs)
+        if minutes==15 and backend.extra==75:raise TimeoutError('private-test-token')
+        return result
+    backend.confirm=confirm
     return backend
 app.NINTENDO=nintendo.Connector(app.DATA,backend_factory=fake_backend,clock=lambda:fixed_time)
 threading.Thread(target=app.worker,daemon=True).start()
@@ -93,6 +99,17 @@ try:
     assert approved['status']=='approved' and approved['approved_minutes']==40
     assert child.call('nintendo/state')['devices'][0]['extra_minutes']==60
     assert child.call('nintendo/state')['devices'][0]['effective_bedtime']=='21:00'
+    uncertain=parent.call('permit',{'client':'nintendo:ABC','service':'@nintendo','minutes':15,'operation_id':secrets.token_hex(16)})
+    assert uncertain['status']=='pending' and not uncertain['last_step_acknowledged']
+    close_body={'client':'nintendo:ABC','operation_id':uncertain['operation_id'],'acknowledge_uncertain':True,'expected_daily_extra_minutes':75,'expected_bedtime':'21:00'}
+    child.call('nintendo/operation/close',close_body,403)
+    observer.call('nintendo/operation/close',close_body,403)
+    closed=parent.call('nintendo/operation/close',close_body)
+    assert closed['status']=='superseded'
+    assert parent.call('nintendo/operation/close',close_body)['status']=='superseded'
+    recovered=child.call('nintendo/state?refresh=1')['devices'][0]
+    assert recovered['extra_minutes']==75 and recovered['pending_operation'] is None
+    assert recovered['last_read_at']>0
     assert observer.call('nintendo/state')['devices']==[]
     for path in ('manifest.webmanifest','sw.js','icon-192.png','icon-512.png'):
         with urllib.request.urlopen('http://127.0.0.1:8080/'+path) as response:assert response.status==200

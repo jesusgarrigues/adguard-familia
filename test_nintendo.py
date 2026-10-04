@@ -369,7 +369,7 @@ class ConnectorTests(unittest.TestCase):
         self.connect()
         self.backend.mode = 'next_step'
         self.backend.confirm_mode = 'conflict'
-        self.assertEqual(self.grant(extend_bedtime=True)['status'], 'pending')
+        self.assertEqual(self.grant(extend_bedtime=True)['status'], 'superseded')
         self.assertEqual(self.backend.confirms, 1)
 
     def test_hidden_alarms_and_alarm_only_mode_do_not_block_budget_management(self):
@@ -485,6 +485,86 @@ class ConnectorTests(unittest.TestCase):
         self.now += 21
         self.connector.devices()
         self.assertEqual(self.backend.reads, first + 1)
+
+    def close_tracking(self, operation_id='direct:1:example', **overrides):
+        options={'acknowledge_uncertain':True,'expected_daily_extra_minutes':self.backend.extra,
+                 'expected_bedtime':self.backend.device['effective_bedtime']}
+        options.update(overrides)
+        return self.connector.close_tracking('nintendo:ABC',operation_id,**options)
+
+    def test_official_app_higher_bonus_closes_accepted_tracking_without_claiming_grant(self):
+        self.connect();self.backend.extra=45;self.backend.device.update(limit_minutes=0,used_minutes=40)
+        self.backend.mode='delayed'
+        pending=self.grant(minutes=15)
+        self.assertEqual(pending['status'],'pending');self.assertTrue(pending['last_step_acknowledged'])
+        self.backend.extra=75
+        device=self.connector.devices(force=True)['devices'][0]
+        self.assertIsNone(device['pending_operation'])
+        self.assertEqual(device['daily_extra_minutes'],75)
+        self.assertEqual(device['last_operation']['status'],'superseded')
+        self.assertEqual(device['last_operation']['confirmed_minutes'],0)
+        self.assertTrue(device['can_grant'])
+        self.assertEqual(self.grant(minutes=15)['status'],'superseded')
+        self.assertEqual(self.backend.grants,1)
+        self.connector.close();self.connector=self.make_connector();self.connector.refresh_pending()
+        self.assertEqual(self.backend.grants,1)
+
+    def test_lagging_baseline_after_ack_stays_pending_then_exact_target_confirms(self):
+        self.connect();self.backend.mode='delayed';self.grant()
+        self.now+=120;self.connector.refresh_pending()
+        pending=self.connector.operation_status('direct:1:example')
+        self.assertEqual(pending['status'],'pending')
+        self.assertEqual(pending['expected_daily_extra_minutes'],20)
+        self.assertTrue(pending['last_step_acknowledged'])
+        self.assertEqual(pending['native_response_status'],'SUCCESS')
+        self.backend.extra=20;self.connector.refresh_pending()
+        self.assertEqual(self.connector.operation_status('direct:1:example')['status'],'confirmed')
+        self.assertEqual(self.backend.grants,1)
+
+    def test_lost_response_higher_read_never_automatically_confirms_or_closes(self):
+        self.connect();self.backend.mode='timeout';self.grant();self.backend.extra=75
+        device=self.connector.devices(force=True)['devices'][0]
+        self.assertEqual(device['pending_operation']['status'],'pending')
+        self.assertFalse(device['pending_operation']['last_step_acknowledged'])
+        self.assertFalse(device['can_grant']);self.assertEqual(self.backend.grants,1)
+
+    def test_official_cancel_below_baseline_closes_accepted_grant(self):
+        self.connect();self.backend.extra=5;self.backend.mode='delayed';self.grant(minutes=15)
+        self.backend.extra=0;self.connector.refresh_pending()
+        self.assertEqual(self.connector.operation_status('direct:1:example')['status'],'superseded')
+        self.assertEqual(self.backend.grants,1)
+
+    def test_close_uncertain_tracking_is_read_only_durable_and_idempotent(self):
+        self.connect();self.backend.mode='timeout';self.grant()
+        result=self.close_tracking()
+        self.assertEqual(result['status'],'superseded');self.assertEqual(result['stage'],'closed_by_user')
+        self.assertEqual(self.backend.extra,20)
+        self.assertEqual((self.backend.grants,self.backend.confirms,self.backend.cancels,self.backend.policy_writes),(1,0,0,0))
+        self.connector.close();self.connector=self.make_connector();self.connector.refresh_pending()
+        self.assertEqual(self.close_tracking()['status'],'superseded')
+        self.assertTrue(self.connector.devices()['devices'][0]['can_grant'])
+        self.grant('direct:1:another')
+        self.close_tracking()  # retry old close never closes a newer pending grant
+        self.assertEqual(self.connector.operation_status('direct:1:another')['status'],'pending')
+        self.assertEqual(self.backend.grants,2)
+
+    def test_closing_tracking_requires_acknowledgement_and_fresh_matching_state(self):
+        self.connect();self.backend.mode='timeout';self.grant()
+        for value in (False,'true',1,None):
+            with self.assertRaises(ValueError):self.close_tracking(acknowledge_uncertain=value)
+        with self.assertRaises(nintendo.NintendoError):self.close_tracking(expected_daily_extra_minutes=0)
+        with self.assertRaises(nintendo.NintendoError):self.close_tracking(expected_bedtime='20:00')
+        self.backend.read_error=TimeoutError('private-token')
+        with self.assertRaises(nintendo.NintendoError):self.close_tracking()
+        self.assertEqual(self.connector.operation_status('direct:1:example')['status'],'pending')
+        self.assertEqual((self.backend.grants,self.backend.cancels),(1,0))
+
+    def test_close_tracking_cannot_target_another_console_or_account(self):
+        self.connect();self.backend.mode='timeout';self.grant()
+        with self.assertRaises(ValueError):self.connector.close_tracking('nintendo:other','direct:1:example',acknowledge_uncertain=True,expected_daily_extra_minutes=20,expected_bedtime='21:00')
+        self.connector._db.execute("UPDATE operations SET account_hash='another-account'");self.connector._db.commit()
+        with self.assertRaises(ValueError):self.close_tracking()
+        self.assertEqual(self.backend.grants,1)
 
     def test_safe_cancel_own_single_grant_is_durable(self):
         self.connect()
@@ -785,7 +865,7 @@ class ConnectorTests(unittest.TestCase):
         self.backend.extra = 45
         self.connector.refresh_pending()
         result = self.connector.operation_status('direct:1:example')
-        self.assertEqual((result['status'], result['confirmed_minutes']), ('failed', 30))
+        self.assertEqual((result['status'], result['confirmed_minutes']), ('superseded', 30))
         self.assertEqual(self.backend.grants, 1)
         self.assertEqual(self.backend.extra, 45)
 

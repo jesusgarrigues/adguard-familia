@@ -178,7 +178,7 @@ def review(user,body,permit):
             audit(user,'request_approved',{'id':row['id'],'client':row['client'],'minutes':minutes,'requested_extend_bedtime':bool(row['extend_bedtime']),'approved_extend_bedtime':extend_bedtime if approved_bedtime is not None else None})
             try:
                 result=permit(row['client'],row['service'],minutes,extend_bedtime=extend_bedtime) if approved_bedtime is not None else permit(row['client'],row['service'],minutes)
-                status='approval_error' if isinstance(result,dict) and result.get('status')=='failed' else 'approved_pending' if isinstance(result,dict) and result.get('status')=='pending' else 'approved'
+                status='approval_error' if isinstance(result,dict) and result.get('status')=='failed' else 'approval_closed' if isinstance(result,dict) and result.get('status')=='superseded' else 'approved_pending' if isinstance(result,dict) and result.get('status')=='pending' else 'approved'
                 DB.execute('UPDATE requests SET status=? WHERE id=?',(status,row['id']));DB.commit()
                 return result
             except Exception:
