@@ -1,6 +1,6 @@
 import logging, socket, ssl
 from collections import deque
-import base64, copy, hmac, ipaddress, json, os, sqlite3, threading, time, urllib.error, urllib.request
+import base64, copy, hashlib, hmac, ipaddress, json, os, sqlite3, threading, time, urllib.error, urllib.request
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS baselines (client TEXT PRIMARY KEY, config TEXT);
 CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, time REAL, client TEXT, service TEXT, domain TEXT, kind TEXT);
 CREATE TABLE IF NOT EXISTS seen (key TEXT PRIMARY KEY, time REAL);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS client_appearance (identity TEXT PRIMARY KEY, icon TEXT NOT NULL);
 ''')
 LAST_ERROR = ''
 DIAGNOSTICS = deque(maxlen=100)
@@ -32,6 +33,54 @@ BOOL_KEYS = ('use_global_settings','filtering_enabled','parental_enabled','safeb
 CLIENT_KEYS = set(BOOL_KEYS) | {'name','ids','safe_search','blocked_services_schedule','blocked_services','upstreams','tags','upstreams_cache_size'}
 RESTRICTIONS = {'@filtering':'filtering_enabled','@parental':'parental_enabled','@safebrowsing':'safebrowsing_enabled','@safesearch':'safe_search'}
 POLICY_KEYS = ('use_global_settings','filtering_enabled','parental_enabled','safebrowsing_enabled','safe_search','safesearch_enabled','use_global_blocked_services','blocked_services','blocked_services_schedule')
+DEVICE_ICONS = ('monitor','laptop','smartphone','tablet','gamepad-2','tv','router','printer','speaker','headphones','watch','server')
+STATIC_ASSETS = {
+    '/assets/app.css': ('assets/app.css','text/css'),
+    '/assets/client-settings.js': ('assets/client-settings.js','application/javascript'),
+    '/assets/fonts/InterVariable.woff2': ('assets/fonts/InterVariable.woff2','font/woff2'),
+    **{'/assets/icons/'+icon+'.svg': ('assets/icons/'+icon+'.svg','image/svg+xml') for icon in DEVICE_ICONS},
+    **{'/assets/licenses/'+name+'.txt': ('assets/licenses/'+name+'.txt','text/plain') for name in ('inter','lucide')},
+}
+
+
+def appearance_identity(client, provider='adguard'):
+    # AdGuard has no stable client UUID: an unchanged set of identifiers survives a rename.
+    identifiers = sorted(set(client.get('ids') or [client['name']])) if provider=='adguard' else [client['key']]
+    return provider+':'+hashlib.sha256(json.dumps(identifiers,ensure_ascii=False).encode()).hexdigest()
+
+
+def automatic_icon(client, provider='adguard'):
+    if provider=='nintendo': return 'gamepad-2'
+    kinds={'device_phone':'smartphone','device_tablet':'tablet','device_tv':'tv','device_router':'router','device_printer':'printer','device_gameconsole':'gamepad-2'}
+    for tag in client.get('tags',[]):
+        if tag in kinds: return kinds[tag]
+    name=client['name'].lower()
+    for pattern,icon in ((r'ipad|tablet','tablet'),(r'iphone|android|móvil|movil|phone','smartphone'),(r'macbook|laptop|portátil|portatil','laptop'),(r'imac|ordenador|desktop|\bpc\b','monitor'),(r'switch|xbox|playstation|consola','gamepad-2'),(r'televisi|\btv\b','tv'),(r'router|wifi','router'),(r'impresora|printer','printer'),(r'altavoz|speaker','speaker'),(r'auriculares|headphone','headphones'),(r'reloj|watch','watch')):
+        if re.search(pattern,name): return icon
+    return 'monitor' if 'device_pc' in client.get('tags',[]) else 'server'
+
+
+def attach_appearance(client, provider='adguard'):
+    row=DB.execute('SELECT icon FROM client_appearance WHERE identity=?',(appearance_identity(client,provider),)).fetchone()
+    client['ui_icon']=row[0] if row else None
+    client['ui_auto_icon']=automatic_icon(client,provider)
+    return client
+
+
+def save_client_icon(user, client, icon):
+    if not isinstance(client,str) or not isinstance(icon,str) or icon not in (*DEVICE_ICONS,'auto'):
+        raise ValueError('Icono o cliente inválido')
+    auth.grant(user,client)
+    provider='nintendo' if client.startswith('nintendo:') else 'adguard'
+    devices=NINTENDO.devices().get('devices',[]) if provider=='nintendo' else api('clients')['clients']
+    device=next((d for d in devices if d.get('key' if provider=='nintendo' else 'name')==client),None)
+    if device is None: raise ValueError('Cliente desconocido')
+    identity=appearance_identity(device,provider)
+    if icon=='auto': DB.execute('DELETE FROM client_appearance WHERE identity=?',(identity,))
+    else: DB.execute('INSERT OR REPLACE INTO client_appearance VALUES (?,?)',(identity,icon))
+    DB.commit()
+    auth.audit(user,'client_icon',{'client':client,'icon':icon})
+    return {'ok':True,'icon':None if icon=='auto' else icon}
 
 
 def demo_reset():
@@ -67,11 +116,25 @@ def diagnostic(endpoint, ok, started, error=None):
     if error: logging.warning('AdGuard endpoint=%s category=%s status=%s: %s', item['endpoint'], item['category'], item.get('http_status'), item['message'])
 
 
-def network_error(endpoint, error):
+def network_error(endpoint, error, config=None):
     reason = getattr(error, 'reason', error)
     if isinstance(error, urllib.error.HTTPError):
         code=error.code
         message={401:'AdGuard rechaza el usuario o contraseña (HTTP 401).',403:'Acceso denegado por AdGuard o su proxy (HTTP 403).',404:'No se encuentra la API (HTTP 404). Comprueba URL, puerto y ruta del proxy.'}.get(code, 'AdGuard o su proxy devolvió HTTP '+str(code)+'.')
+        if code in (400,409,422):
+            try:
+                raw=error.read(4096).decode('utf-8',errors='replace').strip()
+                try:
+                    value=json.loads(raw)
+                    detail=value.get('message') or value.get('error') if isinstance(value,dict) else ''
+                except ValueError: detail=raw if '<' not in raw else ''
+                if isinstance(detail,str) and detail:
+                    for key in ('password','username'):
+                        secret=(config or {}).get(key)
+                        if secret: detail=detail.replace(secret,'[oculto]')
+                    detail=re.sub(r'(?i)(password|token|secret|authorization)\s*[:=]\s*\S+',r'\1=[oculto]',detail)
+                    message+=' '+detail[:300]
+            except Exception: pass
         return AdGuardError(endpoint,'http',message,code)
     if isinstance(reason, ssl.SSLCertVerificationError): return AdGuardError(endpoint,'tls','No se puede verificar el certificado HTTPS. Usa un certificado confiable o instala su CA en el contenedor.')
     if isinstance(reason, (TimeoutError,socket.timeout)): return AdGuardError(endpoint,'timeout','La conexión ha superado 10 segundos. Comprueba red, IP, puerto y firewall desde el contenedor.')
@@ -120,7 +183,7 @@ def api(path, payload=None, method=None, config=None):
         diagnostic(path,False,started,error)
         raise
     except (urllib.error.URLError,OSError) as error:
-        safe=network_error(path,error)
+        safe=network_error(path,error,cfg)
         diagnostic(path,False,started,safe)
         raise safe from None
 
@@ -383,6 +446,7 @@ def scoped_state(user):
     data=state()
     allowed={c['name'] for c in data['clients'] if user['role']=='admin' or c['name'] in user['clients']}
     data['clients']=[c for c in data['clients'] if c['name'] in allowed]
+    for client in data['clients']: attach_appearance(client)
     for key in ('base_clients','effective','base_effective'): data[key]={k:v for k,v in data[key].items() if k in allowed}
     data['leases']=[l for l in data['leases'] if l['client'] in allowed]
     data['events']=[e for e in data['events'] if e['client'] in allowed] if user['role']!='solicitante' else []
@@ -390,7 +454,7 @@ def scoped_state(user):
         data['server']={};data['auto_clients']=[];data['error']=''
         if user['role']!='responsable' or not user['edit_policy']:
             data['global_config']={'protection_enabled':data['global_config']['protection_enabled']}
-            data['clients']=[{'name':c['name'],'ids':c['ids']} for c in data['clients']]
+            data['clients']=[{k:c[k] for k in ('name','ids','ui_icon','ui_auto_icon')} for c in data['clients']]
             data['base_clients']={name:{k:v for k,v in c.items() if k in ('name','ids','use_global_settings','use_global_blocked_services','ignore_querylog')} for name,c in data['base_clients'].items()}
     data['requests']=auth.requests_for(user)
     return data
@@ -399,6 +463,8 @@ def scoped_state(user):
 def nintendo_state(user,force=False):
     data=dict(NINTENDO.devices(force=force))
     data['devices']=[d for d in data.get('devices',[]) if user['role']=='admin' or d['key'] in user['clients']]
+    with LOCK:
+        for device in data['devices']: attach_appearance(device,'nintendo')
     return data
 
 
@@ -495,8 +561,10 @@ class Handler(BaseHTTPRequestHandler):
         return result
     def do_GET(self):
         assets={'/':('index.html','text/html'),'/manifest.webmanifest':('manifest.webmanifest','application/manifest+json'),'/sw.js':('sw.js','application/javascript'),'/icon.svg':('icon.svg','image/svg+xml'),'/icon-192.png':('icon-192.png','image/png'),'/icon-512.png':('icon-512.png','image/png')}
-        if self.path in assets:
-            file,mime=assets[self.path];return self.respond(200,(ROOT/file).read_bytes(),mime)
+        assets.update(STATIC_ASSETS)
+        asset_path=urlsplit(self.path).path
+        if asset_path in assets:
+            file,mime=assets[asset_path];return self.respond(200,(ROOT/file).read_bytes(),mime)
         if self.path=='/api/auth/status': return self.respond(200,{'configured':auth.configured()})
         user=self.user()
         if not user: return self.respond(401,{'error':'Inicia sesión para continuar'})
@@ -533,6 +601,8 @@ class Handler(BaseHTTPRequestHandler):
             if not user: return self.respond(401,{'error':'Inicia sesión para continuar'})
             if not hmac.compare_digest(self.headers.get('X-CSRF-Token',''),user['csrf']): raise auth.Forbidden('Sesión inválida. Vuelve a entrar')
             if self.path=='/api/auth/logout': auth.logout(self.cookie_token());return self.respond(200,{'ok':True})
+            if self.path=='/api/client/icon':
+                with LOCK: return self.respond(200,save_client_icon(user,body['client'],body['icon']))
             if self.path=='/api/nintendo/operation/close':
                 auth.grant(user,body['client'])
                 if not str(body['client']).startswith('nintendo:'): raise ValueError('Consola Nintendo inválida')

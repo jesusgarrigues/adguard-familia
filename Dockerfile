@@ -3,6 +3,7 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 COPY --chmod=444 app.py auth.py nintendo.py index.html manifest.webmanifest sw.js icon.svg icon-192.png icon-512.png ./
+COPY assets/ ./assets/
 RUN mkdir /data && chown 10001:10001 /data
 USER 10001:10001
 EXPOSE 8080

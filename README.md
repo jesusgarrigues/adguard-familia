@@ -17,6 +17,12 @@ docker compose up -d
 
 Abre http://localhost:8080, crea el primer administrador usando APP_TOKEN y configura la URL, usuario y contraseña de AdGuard en **Servidor**. Puedes probar la conexión antes de guardarla. La configuración se conserva en el volumen; la contraseña no se devuelve al navegador. Puedes usar variables ADGUARD_* en .env como configuración inicial.
 
+Para cambiar el puerto publicado, define `APP_PORT=8090` (o el puerto que prefieras) en `.env` y ejecuta `docker compose up -d`. El contenedor y su comprobación de salud siguen usando 8080 internamente. `BIND_ADDRESS` conserva su función. Si tu Compose anterior tenía un puerto personalizado escrito directamente, pasa ese valor a `APP_PORT` antes de reemplazar el archivo para conservarlo.
+
+La interfaz usa un tema claro y la fuente Inter local. En el detalle del cliente, **Cambiar icono** ofrece 12 iconos de dispositivos y **Automático**. Administradores y responsables pueden cambiar los iconos de sus clientes; la elección se guarda en SQLite y se comparte entre navegadores. Se identifica un cliente de AdGuard por su conjunto de identificadores: renombrarlo o reordenarlos conserva el icono; cambiar ese conjunto crea una identidad distinta. Las consolas se identifican por su ID de Nintendo.
+
+En **Ajustes**, activar **Usar servicios y horarios globales** oculta la edición personalizada. Al desactivarlo se recuperan los servicios propios del cliente; si no tiene ninguno, se presenta una selección vacía. Alternar la opción conserva el borrador. Guardar muestra progreso y errores dentro de la ventana, conserva los campos si falla y comprueba el resultado en AdGuard. Si AdGuard acepta el cambio pero no se puede comprobar la lectura, **Comprobar guardado** vuelve a consultar sin reenviar la escritura. Los permisos temporales siguen aplicándose sobre la configuración permanente.
+
 Para acceder desde tu LAN, configura `BIND_ADDRESS=0.0.0.0` y abre la IP del servidor. Usa un proxy inverso con HTTPS para acceso remoto y notificaciones de navegador desde la LAN. La URL de AdGuard incluye su puerto web, no su puerto DNS. `localhost` dentro del contenedor apunta a la app; para otro contenedor usa una red Docker compartida y el nombre de servicio.
 
 Las imágenes publicadas por el workflow admiten `linux/amd64` y `linux/arm64`. `latest` y `edge` se actualizan tras superar las pruebas en `main`; las etiquetas `v*` añaden versiones numeradas. Puedes fijar `IMAGE_TAG` a una versión publicada.

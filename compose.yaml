@@ -12,7 +12,7 @@ services:
         condition: service_completed_successfully
     image: ${DOCKERHUB_USERNAME:?Define DOCKERHUB_USERNAME en .env}/adguard-familia:${IMAGE_TAG:-latest}
     ports:
-      - "${BIND_ADDRESS:-127.0.0.1}:8080:8080"
+      - "${BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-8080}:8080"
     env_file: .env
     volumes:
       - companion-data:/data
