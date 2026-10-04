@@ -67,9 +67,9 @@ function nintendoDurationActions(client){
   const before=device?.budget_remaining_minutes??device?.remaining_minutes;
   const after=Number.isFinite(device?.limit_minutes)&&Number.isFinite(device?.daily_extra_minutes)&&device.limit_minutes>=0&&device.daily_extra_minutes>=0?Math.max(0,device.limit_minutes+device.daily_extra_minutes+minutes-device.used_minutes):before===null||before===undefined?null:before+minutes;
   const window=device?.bedtime_remaining_minutes,conflict=Number.isFinite(window)&&after!==null&&after>window;
-  preview.textContent='Añadir '+minutes+' minutos más. '+(after===null?'Nintendo confirmará el presupuesto disponible.':'Presupuesto pendiente estimado: '+gameMinutes(before)+' → '+gameMinutes(after)+'.')+' '+(device?.bedtime?'Hora tope de hoy: '+nintendoBedtime(device.bedtime)+'. ':'Sin hora tope configurada. ')+(conflict&&!bedtime.checked?'No cabe todo el presupuesto antes de la hora tope. Reduce los minutos o solicita su ampliación.':bedtime.checked?'Nintendo propondrá la hora excepcional si hace falta; solo para hoy.':'Se conserva el horario habitual.');
+  preview.textContent='Añadir '+minutes+' minutos más. '+(after===null?'Nintendo confirmará el presupuesto disponible.':'Presupuesto pendiente estimado: '+gameMinutes(before)+' → '+gameMinutes(after)+'.')+' '+(device?.bedtime?'Hora tope de hoy: '+nintendoBedtime(device.bedtime)+'. ':'Sin hora tope configurada. ')+(conflict&&!bedtime.checked?'Parte del presupuesto podría quedar sin usar: se mantiene la hora tope. Puedes añadir tiempo conservándola o permitir ampliar también el descanso.':bedtime.checked?'Nintendo propondrá la hora excepcional si hace falta; solo para hoy.':'Se conserva el horario habitual.');
   preview.className='notice'+(conflict&&!bedtime.checked?' warning':'');
-  grant.disabled=busy||(me?.role!=='solicitante'&&conflict&&!bedtime.checked);
+  grant.disabled=busy;
  };
  select.onchange=remember;bedtime.onchange=remember;
  const quick=el('div','','actions');for(const m of [15,30,40,60].filter(m=>durations.includes(m)))quick.append(button('+'+m+' min',()=>{select.value=m;remember()},'ghost'));

@@ -13,7 +13,11 @@ import app, nintendo
 from test_nintendo import FakeBackend
 app.NINTENDO.close()
 fixed_time=datetime(2026,9,4,18,0,tzinfo=ZoneInfo('Europe/Madrid')).timestamp()
-app.NINTENDO=nintendo.Connector(app.DATA,backend_factory=FakeBackend,clock=lambda:fixed_time)
+def fake_backend():
+    backend=FakeBackend()
+    backend.mode='next_step'
+    return backend
+app.NINTENDO=nintendo.Connector(app.DATA,backend_factory=fake_backend,clock=lambda:fixed_time)
 threading.Thread(target=app.worker,daemon=True).start()
 ThreadingHTTPServer(('127.0.0.1',8080),app.Handler).serve_forever()
 """
@@ -72,6 +76,8 @@ try:
     assert approved['status']=='approved' and not approved['approved_extend_bedtime']
     state=child.call('nintendo/state?refresh=1')
     assert state['devices'][0]['extra_minutes']==20
+    assert state['devices'][0]['effective_bedtime']=='21:00'
+    assert state['devices'][0]['last_operation']['confirmation_with_bedtime'] is False
     child.call('nintendo/policy',{'client':'nintendo:ABC','patch':{},'revision':'rev','operation_id':secrets.token_hex(16)},403)
     parent.call('nintendo/policy',{'client':'nintendo:ABC','patch':{},'revision':'rev','operation_id':secrets.token_hex(16)},403)
     forty_id=child.call('request',{'client':'nintendo:ABC','service':'@nintendo','minutes':40})['id']
@@ -86,6 +92,7 @@ try:
     approved=next(r for r in child.call('requests')['requests'] if r['id']==forty_id)
     assert approved['status']=='approved' and approved['approved_minutes']==40
     assert child.call('nintendo/state')['devices'][0]['extra_minutes']==60
+    assert child.call('nintendo/state')['devices'][0]['effective_bedtime']=='21:00'
     assert observer.call('nintendo/state')['devices']==[]
     for path in ('manifest.webmanifest','sw.js','icon-192.png','icon-512.png'):
         with urllib.request.urlopen('http://127.0.0.1:8080/'+path) as response:assert response.status==200

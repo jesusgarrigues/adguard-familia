@@ -27,6 +27,7 @@ class FakeBackend:
         self.available = True
         self.complete_on = None
         self.policy_writes = 0
+        self.confirm_bedtime_flags = []
         self.device = {
             'id': 'ABC', 'key': 'nintendo:ABC', 'name': 'Switch de Martín', 'model': 'Switch',
             'used_minutes': 60, 'remaining_minutes': 0, 'limit_minutes': 60,
@@ -90,11 +91,13 @@ class FakeBackend:
             raise TimeoutError('secret-token-in-unsafe-sdk-error')
         return {'json': {'status': 'TO_ADDED'}}
 
-    async def confirm(self, device_id, minutes):
+    async def confirm(self, device_id, minutes, *, with_bedtime):
         self.confirms += 1
+        self.confirm_bedtime_flags.append(with_bedtime)
         if self.confirm_mode != 'delayed':
             self.extra += minutes
-            self.device['bedtime'] = self.device['effective_bedtime'] = self.confirm_to
+            if with_bedtime:
+                self.device['bedtime'] = self.device['effective_bedtime'] = self.confirm_to
         if self.confirm_mode == 'timeout':
             raise TimeoutError('private-confirm-token')
         if self.confirm_mode == 'conflict':
@@ -210,16 +213,18 @@ class ConnectorTests(unittest.TestCase):
             self.connector.grant('nintendo:OTHER', 20, 'direct:1:example')
         self.assertEqual(self.backend.grants, 1)
 
-    def test_next_step_refuses_bedtime_confirmation(self):
+    def test_next_step_confirms_budget_without_approving_bedtime(self):
         self.connect()
         self.backend.mode = 'next_step'
         result = self.grant()
-        self.assertEqual(result['status'], 'failed')
-        self.assertIn('descanso', result['message'])
-        self.assertEqual(self.backend.extra, 0)
-        self.assertEqual(self.grant()['status'], 'failed')
+        self.assertEqual(result['status'], 'confirmed')
+        self.assertFalse(result['confirmation_with_bedtime'])
+        self.assertEqual(self.backend.extra, 20)
+        self.assertEqual(self.backend.device['bedtime'], '21:00')
+        self.assertEqual(self.grant()['status'], 'confirmed')
         self.assertEqual(self.backend.grants, 1)
-        self.assertEqual(self.backend.confirms, 0)
+        self.assertEqual(self.backend.confirms, 1)
+        self.assertEqual(self.backend.confirm_bedtime_flags, [False])
 
     def test_explicit_extension_verified_in_both_dimensions_and_persisted(self):
         self.connect()
@@ -243,7 +248,7 @@ class ConnectorTests(unittest.TestCase):
         self.backend.extra = 40
         self.backend.device['used_minutes'] = 40
         self.backend.mode = 'next_step'
-        async def bedtime_only(device_id, minutes):
+        async def bedtime_only(device_id, minutes, *, with_bedtime):
             self.backend.confirms += 1
             self.backend.device['effective_bedtime'] = self.backend.device['bedtime'] = '21:20'
             return {'json': {'status': 'TO_ADDED'}}
@@ -302,7 +307,7 @@ class ConnectorTests(unittest.TestCase):
         self.now = datetime(2026, 9, 4, 21, 50, tzinfo=ZoneInfo('Europe/Madrid')).timestamp()
         self.backend.mode = 'next_step'
         self.backend.confirm_to = '22:10'
-        async def confirm(device_id, minutes):
+        async def confirm(device_id, minutes, *, with_bedtime):
             self.backend.confirms += 1
             self.backend.extra = 20  # Clock shifted 70 minutes, daily budget only 20.
             self.backend.device['bedtime'] = self.backend.device['effective_bedtime'] = '22:10'
@@ -384,9 +389,10 @@ class ConnectorTests(unittest.TestCase):
         self.connect()
         self.backend.device['bedtime_remaining_minutes'] = 0
         self.assertEqual(self.connector.validate('nintendo:ABC', 20)['key'], 'nintendo:ABC')
-        with self.assertRaises(nintendo.NintendoError):
-            self.grant()
-        self.assertEqual(self.backend.grants, 0)
+        self.backend.mode='next_step'
+        self.assertEqual(self.grant()['status'],'confirmed')
+        self.assertEqual(self.backend.confirm_bedtime_flags,[False])
+        self.assertEqual(self.backend.device['bedtime'],'21:00')
 
     def test_bedtime_flag_strict_boolean(self):
         self.connect()
@@ -618,6 +624,107 @@ class ConnectorTests(unittest.TestCase):
         self.backend.grant = inspect
         self.assertEqual(self.grant()['status'], 'confirmed')
 
+    def test_zero_daily_limit_existing_five_can_add_fifteen_with_incomplete_estimate(self):
+        self.connect()
+        self.backend.device.update(limit_minutes=0, used_minutes=0, bedtime='20:00',
+                                   base_bedtime='20:00', effective_bedtime='20:00')
+        details = ({}, {'estimatedBedtimeChanges': None},
+                   {'estimatedBedtimeChanges': {'from': {'hour':20}, 'to': {'hour':20}}},
+                   {'estimatedBedtimeChanges': {'from': {'hour':20,'minute':0}, 'to': {'hour':20,'minute':0}}})
+        for index, detail in enumerate(details):
+            for extend in (False, True):
+                with self.subTest(detail=detail, extend=extend):
+                    self.backend.extra=5
+                    async def proposal(device_id, minutes):
+                        self.backend.grants+=1
+                        return {'json': {'status':'TO_ADDED', 'nextStepDetail':detail}}
+                    self.backend.grant=proposal
+                    result=self.grant(f'direct:1:shape-{index}-{extend}', minutes=15, extend_bedtime=extend)
+                    self.assertEqual(result['status'],'confirmed')
+                    self.assertFalse(result['confirmation_with_bedtime'])
+                    self.assertEqual(self.backend.extra,20)
+                    self.assertEqual(self.backend.device['bedtime'],'20:00')
+        self.assertEqual(self.backend.confirm_bedtime_flags,[False]*8)
+
+    def test_unknown_update_with_next_step_never_sends_a_confirmation(self):
+        self.connect()
+        async def proposal(*args): return {'json': {'status':'SOMETHING_NEW', 'nextStepDetail':{}}}
+        self.backend.grant=proposal
+        self.assertEqual(self.grant()['status'],'pending')
+        self.assertEqual(self.backend.confirms,0)
+
+    def test_composed_grant_preserves_bedtime_from_previous_verified_step(self):
+        self.connect();self.backend.confirm_to='21:30'
+        async def proposal(device_id,minutes):
+            self.backend.grants+=1
+            detail={'estimatedBedtimeChanges':{'from':{'hour':21,'minute':0},'to':{'hour':21,'minute':30}}} if self.backend.grants==1 else {}
+            return {'json':{'status':'TO_ADDED','nextStepDetail':detail}}
+        self.backend.grant=proposal
+        self.assertEqual(self.grant(minutes=40,extend_bedtime=True)['confirmed_minutes'],30)
+        self.connector.refresh_pending();self.connector.refresh_pending()
+        result=self.connector.operation_status('direct:1:example')
+        self.assertEqual(result['status'],'confirmed')
+        self.assertEqual(result['confirmed_minutes'],40)
+        self.assertEqual(self.backend.extra,40)
+        self.assertEqual(self.backend.device['effective_bedtime'],'21:30')
+        self.assertEqual(self.backend.confirm_bedtime_flags,[True,False,False])
+
+    def test_failed_fresh_read_after_next_step_is_unsent_not_uncertain(self):
+        self.connect();self.backend.mode='next_step'
+        self.backend.read_after_update=lambda:setattr(self.backend,'read_error',TimeoutError('private-token'))
+        result=self.grant()
+        self.assertEqual(result['status'],'failed')
+        self.assertEqual(result['stage'],'confirmation_received')
+        self.assertEqual(self.backend.confirms,0)
+        self.assertNotIn('private-token',result['message'])
+        self.backend.read_error=None;self.backend.read_after_update=None
+        self.assertEqual(self.grant('direct:1:new')['status'],'confirmed')
+
+    def test_budget_only_confirm_timeout_remains_uncertain_after_restart(self):
+        self.connect();self.backend.mode='next_step';self.backend.confirm_mode='timeout'
+        result=self.grant()
+        self.assertEqual(result['status'],'pending')
+        self.assertEqual(result['stage'],'confirm_sent')
+        self.assertEqual(self.backend.device['bedtime'],'21:00')
+        self.connector.close();self.connector=self.make_connector()
+        self.connector.refresh_pending()
+        self.assertEqual(self.grant()['status'],'pending')
+        self.assertEqual(self.backend.grants,1)
+        self.assertEqual(self.backend.confirms,1)
+
+    def test_explicit_confirm_conflict_is_failed_and_not_replayed(self):
+        self.connect();self.backend.mode='next_step'
+        class Conflict(Exception): status_code=409
+        async def reject(*args,**kwargs):raise Conflict()
+        self.backend.confirm=reject
+        self.assertEqual(self.grant()['status'],'failed')
+        self.assertEqual(self.backend.extra,0)
+        self.assertEqual(self.grant()['status'],'failed')
+        self.assertEqual(self.backend.grants,1)
+
+    def test_upgrade_releases_only_old_known_unsent_confirmation(self):
+        self.connect()
+        device=self.connector.validate('nintendo:ABC',15)
+        self.connector._insert('direct:1:old',device,15,'grant',extend_bedtime=True)
+        self.connector._finish('direct:1:old','pending','Nintendo ha enviado una ampliación del horario incompleta. El resultado es incierto y no se reenviará la operación.')
+        self.connector.close();self.connector=self.make_connector()
+        self.assertEqual(self.connector.operation_status('direct:1:old')['status'],'failed')
+        self.assertEqual(self.backend.grants,0)
+        self.assertEqual(self.backend.confirms,0)
+        self.assertEqual(self.grant('direct:1:new',minutes=15)['status'],'confirmed')
+
+    def test_restart_after_receiving_next_step_never_sends_unfinished_confirmation(self):
+        self.connect()
+        device=self.connector.validate('nintendo:ABC',15)
+        self.connector._insert('direct:1:old',device,15,'grant')
+        self.connector._db.execute("UPDATE operations SET stage='confirmation_received'")
+        self.connector._db.commit()
+        self.connector.close();self.connector=self.make_connector()
+        self.connector.refresh_pending()
+        self.assertEqual(self.connector.operation_status('direct:1:old')['status'],'failed')
+        self.assertEqual(self.backend.grants,0)
+        self.assertEqual(self.backend.confirms,0)
+
     def test_sixty_is_one_native_grant_and_consumed_bonus_can_be_extended_again(self):
         self.connect()
         self.assertEqual(self.grant(minutes=60)['confirmed_minutes'], 60)
@@ -789,15 +896,26 @@ class ConnectorTests(unittest.TestCase):
         self.connect()
         self.backend.mode = 'next_step'
         original = self.backend.confirm
-        async def inspect(device_id, minutes):
+        async def inspect(device_id, minutes, *, with_bedtime):
             row = self.connector._db.execute('SELECT extend_bedtime,stage,ack FROM operations').fetchone()
             self.assertEqual(tuple(row), (1, 'confirm_sent', 0))
-            return await original(device_id, minutes)
+            return await original(device_id, minutes, with_bedtime=with_bedtime)
         self.backend.confirm = inspect
         self.assertEqual(self.grant(extend_bedtime=True)['status'], 'confirmed')
 
 
 class SDKAdapterTests(unittest.TestCase):
+    def test_sdk_confirmation_passes_explicit_bedtime_choice(self):
+        class Api:
+            calls=[]
+            async def async_confirm_extra_playing_time(self,*args,**kwargs):
+                self.calls.append((args,kwargs));return {'json':{'status':'TO_ADDED'}}
+        backend=nintendo._NintendoBackend();backend.api=Api()
+        asyncio.run(backend.confirm('ABC',15,with_bedtime=False))
+        asyncio.run(backend.confirm('ABC',15,with_bedtime=True))
+        self.assertEqual(backend.api.calls,[(('ABC',15),{'with_bedtime':False}),
+                                          (('ABC',15),{'with_bedtime':True})])
+
     def test_additional_time_api_never_calls_automatic_bedtime_method(self):
         class Api:
             calls = []

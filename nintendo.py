@@ -313,8 +313,8 @@ class _NintendoBackend:
     async def cancel(self, device_id):
         return await self.api.async_update_extra_playing_time(device_id, cancel=True)
 
-    async def confirm(self, device_id, minutes):
-        return await self.api.async_confirm_extra_playing_time(device_id, minutes, with_bedtime=True)
+    async def confirm(self, device_id, minutes, *, with_bedtime):
+        return await self.api.async_confirm_extra_playing_time(device_id, minutes, with_bedtime=with_bedtime)
 
     async def policy(self, device_id, regulations):
         return await self.api.async_update_play_timer(device_id, regulations)
@@ -372,9 +372,22 @@ class Connector:
             ('chunks', 'TEXT'), ('chunk_index', 'INTEGER NOT NULL DEFAULT 0'),
             ('confirmed_minutes', 'INTEGER NOT NULL DEFAULT 0'), ('native_expires_at', 'REAL'),
             ('expected_policy', 'TEXT'), ('policy_payload_hash', 'TEXT'),
+            ('confirmation_with_bedtime', 'INTEGER'),
         ):
             if column not in columns:
                 self._db.execute(f'ALTER TABLE operations ADD COLUMN {column} {definition}')
+        self._db.commit()
+        # Older versions left a known, unfinished two-step request uncertain
+        # when parsing its bedtime estimate failed. No confirm was sent in
+        # those cases. Release ONLY that evidence-backed case, never a lost
+        # update or confirm response. New interrupted pre-confirm stages are
+        # also safe to close without sending anything on restart.
+        self._db.execute('''UPDATE operations SET status='failed',message=?,updated_at=?
+            WHERE status='pending' AND kind='grant' AND ack=0 AND (
+                stage='confirmation_received' OR (stage='update_sent' AND
+                (message LIKE 'Nintendo ha enviado una ampliación del horario incompleta.%'
+                 OR message LIKE 'Nintendo no ha enviado un horario de descanso válido.%')))''',
+            ('Nintendo pidió una confirmación que no llegó a enviarse. No se ha reenviado la operación; puedes iniciar una nueva concesión.', self._clock()))
         self._db.commit()
 
     @staticmethod
@@ -601,17 +614,10 @@ class Connector:
         budget_after = device['limit_minutes'] + daily + minutes - device['used_minutes']
         if budget_after <= 0:
             raise NintendoError('El tiempo solicitado no alcanza para superar el uso ya registrado. Elige una duración mayor dentro de tu límite de aprobación.')
-        if not extend_bedtime and device.get('bedtime'):
-            remaining = device.get('bedtime_remaining_minutes')
-            if remaining is None:
-                now = datetime.fromtimestamp(self._clock(), ZoneInfo(self._credentials['timezone']))
-                ending = _time_minutes(device['bedtime'])
-                end = now.replace(hour=ending // 60, minute=ending % 60, second=0, microsecond=0)
-                if end <= now and ending < 360 and now.hour >= 6:
-                    end += timedelta(days=1)
-                remaining = max(0, (end - now).total_seconds() / 60)
-            if remaining < budget_after - 1:
-                raise NintendoError('El horario de descanso impide conceder todos esos minutos. Reduce la duración o aprueba explícitamente ampliar el descanso de hoy.')
+        # A budget need not fit entirely before bedtime. Nintendo supports
+        # confirming ONLY the daily budget with withBedtime=False; the hard
+        # cutoff remains active. The UI explains the usable window rather
+        # than forcing a parent to authorize a bedtime change.
 
     @staticmethod
     def _operation_id(operation_id):
@@ -627,6 +633,7 @@ class Connector:
                 'steps_total': len(json.loads(row['chunks'])) if row['chunks'] else 1,
                 'steps_confirmed': row['chunk_index'] if row['model_version'] == 2 else int(row['status'] == 'confirmed'),
                 'night_only': bool(row['night_only']),
+                'confirmation_with_bedtime': None if row['confirmation_with_bedtime'] is None else bool(row['confirmation_with_bedtime']),
                 'created_at': row['created_at'], 'updated_at': row['updated_at']}
 
     def operation_status(self, operation_id):
@@ -684,6 +691,8 @@ class Connector:
                         self._finish(row['operation_id'], 'pending', f'{confirmed} de {row["minutes"]} minutos confirmados. Preparando el siguiente paso aprobado.')
                         continue
                 message = 'Tiempo extra confirmado en Nintendo.' if row['kind'] == 'grant' else 'Tiempo extra cancelado en Nintendo.'
+                if row['kind'] == 'grant' and row['confirmation_with_bedtime'] == 0:
+                    message = 'Tiempo extra confirmado en Nintendo; se conserva la hora tope de hoy.'
                 if row['kind'] == 'grant' and row['night_only']:
                     message = 'Nintendo ha confirmado la ampliación de la hora tope; el presupuesto diario se muestra por separado.'
                 self._finish(row['operation_id'], 'confirmed', message)
@@ -744,13 +753,50 @@ class Connector:
 
     def _confirm_bedtime(self, operation_id, device, minutes, payload):
         row = self._db.execute('SELECT * FROM operations WHERE operation_id=?', (operation_id,)).fetchone()
-        if not row['extend_bedtime']:
-            return self._finish(operation_id, 'failed', 'Nintendo pide ampliar el horario de descanso. Se mantiene el bloqueo y no se ha confirmado esa ampliación.')
+        # Receiving nextStepDetail means updateExtraPlayingTime has NOT
+        # finished. Confirming the budget and extending bedtime are separate
+        # choices. Record this distinction before a read or a process crash.
+        self._db.execute("UPDATE operations SET stage='confirmation_received',ack=0,updated_at=? WHERE operation_id=?", (self._clock(), operation_id))
+        self._db.commit()
         detail = payload.get('nextStepDetail')
         changes = detail.get('estimatedBedtimeChanges') if isinstance(detail, dict) else None
-        if not isinstance(changes, dict):
-            return self._finish(operation_id, 'failed', 'Nintendo no ha indicado un horario ampliado verificable. No se ha confirmado la ampliación.')
-        from_time, to_time = _api_time(changes.get('from')), _api_time(changes.get('to'))
+        from_time = to_time = None
+        if row['extend_bedtime'] and isinstance(changes, dict):
+            try:
+                from_time, to_time = _api_time(changes.get('from')), _api_time(changes.get('to'))
+            except NintendoError:
+                # An unparseable optional estimate cannot authorize a clock
+                # change. We can still confirm the budget with bedtime=False.
+                pass
+        with_bedtime = bool(from_time and to_time and from_time != to_time)
+        try:
+            return self._send_confirmation(row, device, minutes, from_time, to_time, with_bedtime)
+        except Exception as error:
+            current = self._db.execute('SELECT stage FROM operations WHERE operation_id=?', (operation_id,)).fetchone()
+            if current['stage'] != 'confirmation_received':
+                raise  # A confirm MAY have been sent: keep the uncertain result.
+            return self._finish(operation_id, 'failed', _safe_error(error) + ' No se ha enviado la confirmación ni se ha ampliado el descanso.')
+
+    def _send_confirmation(self, row, device, minutes, from_time, to_time, with_bedtime):
+        operation_id = row['operation_id']
+        # A fresh read between API calls prevents confirming against policy
+        # or extra time changed by another parent meanwhile.
+        fresh = next((item for item in self._read() if item['key'] == device['key']), None)
+        keys = ('daily_extra_minutes', 'limit_minutes', 'forced_termination')
+        if (not fresh or any(fresh.get(key) != device.get(key) for key in keys)
+                or fresh.get('base_bedtime', fresh.get('bedtime')) != row['base_bedtime']
+                or fresh.get('effective_bedtime', fresh.get('bedtime')) != row['baseline_bedtime']):
+            return self._finish(operation_id, 'failed', 'Las restricciones han cambiado durante la aprobación. No se ha enviado la confirmación.')
+        self._preflight(fresh, minutes, bool(row['extend_bedtime']))
+        if not with_bedtime:
+            expected = fresh.get('daily_extra_minutes', fresh['extra_minutes']) + minutes
+            self._db.execute('''UPDATE operations SET stage='confirm_sent',expected=?,expected_daily=?,
+                expected_bedtime=?,night_only=0,confirmation_with_bedtime=0,ack=0,updated_at=? WHERE operation_id=?''',
+                (expected, expected, row['baseline_bedtime'], self._clock(), operation_id))
+            self._db.commit()  # durable BEFORE confirming; never resend on timeout
+            return _response_payload(self._run(self._backend.confirm(device['id'], minutes, with_bedtime=False)))
+        if fresh.get('effective_bedtime', fresh.get('bedtime')) != from_time:
+            return self._finish(operation_id, 'failed', 'El horario propuesto por Nintendo no coincide con el actual. No se ha confirmado la ampliación.')
         extension = (_time_minutes(to_time) - _time_minutes(from_time)) % 1440
         now = datetime.fromtimestamp(self._clock(), ZoneInfo(self._credentials['timezone']))
         scheduled = now.replace(hour=_time_minutes(from_time)//60, minute=_time_minutes(from_time)%60, second=0, microsecond=0)
@@ -762,44 +808,34 @@ class Connector:
         usable_extension = (proposed_end - max(scheduled, now)).total_seconds() / 60
         if not extension or not 0 < usable_extension <= minutes:
             return self._finish(operation_id, 'failed', 'La ampliación propuesta por Nintendo excede los minutos aprobados. No se ha confirmado.')
-        # A fresh read between the two API calls prevents confirming against
-        # a limit, bedtime or suspension changed by another parent meanwhile.
-        fresh = next((item for item in self._read() if item['key'] == device['key']), None)
-        keys = ('extra_minutes', 'limit_minutes', 'forced_termination')
-        if (not fresh or any(fresh.get(key) != device.get(key) for key in keys)
-                or fresh.get('base_bedtime', fresh.get('bedtime')) != row['base_bedtime']
-                or fresh.get('effective_bedtime', fresh.get('bedtime')) != from_time):
-            return self._finish(operation_id, 'failed', 'Las restricciones han cambiado durante la aprobación. No se ha confirmado la ampliación del descanso.')
-        self._preflight(fresh, minutes, True)
-        proposed = copy.deepcopy(fresh)
-        proposed['bedtime'] = to_time
-        proposed.pop('bedtime_remaining_minutes', None)
-        self._preflight(proposed, minutes, False)
         start = fresh.get('bedtime_start')
         if start and _time_minutes(to_time) < 360 and _time_minutes(to_time) >= _time_minutes(start):
             return self._finish(operation_id, 'failed', 'El horario propuesto entra en conflicto con el inicio del siguiente día. No se ha confirmado.')
         daily_budget = max(0, fresh['limit_minutes'] + fresh.get('daily_extra_minutes', fresh['extra_minutes']) - fresh['used_minutes'])
         night_only = daily_budget >= minutes
-        target_night_extra = (_time_minutes(to_time) - _time_minutes(row['base_bedtime'])) % 1440
         expected = fresh.get('daily_extra_minutes', fresh['extra_minutes']) + (0 if night_only else minutes)
         self._db.execute('''UPDATE operations SET stage='confirm_sent',expected_bedtime=?,
-            expected=?,expected_daily=?,night_only=?,ack=0,updated_at=? WHERE operation_id=?''',
+            expected=?,expected_daily=?,night_only=?,confirmation_with_bedtime=1,ack=0,updated_at=? WHERE operation_id=?''',
             (to_time, expected, expected, int(night_only), self._clock(), operation_id))
         self._db.commit()  # includes the explicit flag BEFORE second mutation
-        return _response_payload(self._run(self._backend.confirm(device['id'], minutes)))
+        return _response_payload(self._run(self._backend.confirm(device['id'], minutes, with_bedtime=True)))
 
     def _mutate(self, operation_id, device, minutes, kind):
         try:
             response = self._run(self._backend.grant(device['id'], minutes) if kind == 'grant' else self._backend.cancel(device['id']))
             payload = _response_payload(response)
-            if payload.get('nextStepDetail'):
+            if payload.get('status') in _REJECTED:
+                return self._finish(operation_id, 'failed', _REJECTED[payload['status']])
+            if payload.get('nextStepDetail') is not None:
+                if payload.get('status') not in ('SUCCESS', 'TO_ADDED'):
+                    return self._finish(operation_id, 'pending', 'Nintendo ha enviado una confirmación con un estado desconocido. No se reenviará la operación.')
                 if kind != 'grant':
                     return self._finish(operation_id, 'failed', 'Nintendo pide confirmar un cambio adicional para cancelar. No se ha autorizado ese cambio.')
                 confirmed_payload = self._confirm_bedtime(operation_id, device, minutes, payload)
                 if 'operation_id' in confirmed_payload:
                     return confirmed_payload
                 payload = confirmed_payload
-                if payload.get('nextStepDetail'):
+                if payload.get('nextStepDetail') is not None:
                     return self._finish(operation_id, 'pending', 'Nintendo ha solicitado otra confirmación inesperada. No se reenviará la operación.')
             status = payload.get('status')
             if status in _REJECTED:
@@ -812,6 +848,8 @@ class Connector:
             status = str(getattr(error, 'status', ''))
             if status in _REJECTED:
                 return self._finish(operation_id, 'failed', _REJECTED[status])
+            if getattr(error, 'status_code', None) in (400, 401, 403, 404, 409, 422):
+                return self._finish(operation_id, 'failed', _safe_error(error) + ' Nintendo ha rechazado la operación.')
             # Network failures and unrecognised responses can happen AFTER a
             # write. Never report them as safely retryable failures.
             return self._finish(operation_id, 'pending', _safe_error(error) + ' El resultado es incierto y no se reenviará la operación.')
@@ -880,8 +918,10 @@ class Connector:
             chunks = json.loads(row['chunks'])
             minutes = chunks[row['chunk_index']]
             self._preflight(fresh, row['minutes'] - row['confirmed_minutes'], bool(row['extend_bedtime']))
-            self._db.execute('''UPDATE operations SET stage='update_sent',ack=0,expected_daily=?,expected=?,baseline_daily_extra=?,updated_at=? WHERE operation_id=?''',
-                             (row['expected_daily'] + minutes, row['expected_daily'] + minutes, row['expected_daily'], self._clock(), row['operation_id']))
+            self._db.execute('''UPDATE operations SET stage='update_sent',ack=0,expected_daily=?,expected=?,baseline_daily_extra=?,
+                baseline_bedtime=?,confirmation_with_bedtime=NULL,night_only=0,updated_at=? WHERE operation_id=?''',
+                             (row['expected_daily'] + minutes, row['expected_daily'] + minutes, row['expected_daily'],
+                              row['expected_bedtime'], self._clock(), row['operation_id']))
             self._db.commit()  # crash after this point must never repeat this step
             sent = True
             return self._mutate(row['operation_id'], fresh, minutes, 'grant')
