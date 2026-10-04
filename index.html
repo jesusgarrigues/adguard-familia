@@ -144,6 +144,7 @@ function renderNintendoDialogControls(){
  if(['failed','superseded'].includes(device.last_operation?.status))root.append(el('div',device.last_operation.message+(device.last_operation.confirmed_minutes?' Confirmados: '+device.last_operation.confirmed_minutes+' de '+device.last_operation.minutes+' minutos.':''),'notice warning'));
  root.append(nintendoDurationActions(nintendoModalKey));
  if(device.can_cancel&&['admin','responsable'].includes(me?.role)){const cancel=button('Retirar ampliación de hoy',()=>{if(confirm('¿Retirar TODA la ampliación de hoy, incluida la concedida desde la app oficial de Nintendo? Se conserva el límite diario y se recupera el horario de descanso habitual.'))nintendoAction(nintendoModalKey,'cancel')},'danger');cancel.disabled=busy;root.append(cancel)}
+ if(device.last_operation&&['admin','responsable'].includes(me?.role))root.append(nintendoTrackingDetails(device,device.last_operation));
  root.append(el('p',device.console_sync_pending?'Aplicación en consola pendiente de sincronizar.':'Nintendo comunica sincronización completada.','muted'));
 }
 function updateNintendoOperationViews(){renderNintendoClientGrid();renderNintendoDialogControls()}
