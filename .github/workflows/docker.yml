@@ -15,7 +15,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-      - run: python -m unittest -v test_app.py test_diagnostics.py test_auth.py
+      - run: pip install -r requirements.txt
+      - run: python -m unittest -v test_app.py test_diagnostics.py test_auth.py test_nintendo.py test_nintendo_routes.py
       - run: python test_http.py
       - uses: actions/setup-node@v4
         with:
@@ -30,6 +31,20 @@ jobs:
           PY
           node --check /tmp/frontend.js
           node test_ui.cjs
+      - name: Verify desktop and mobile controls in a browser
+        run: |
+          npm install --prefix /tmp/adguard-browser-deps --no-save playwright@1.62.1
+          NODE_PATH=/tmp/adguard-browser-deps/node_modules timeout 90s node test_browser.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-previews
+          path: /tmp/adguard-ui-review/*.png
+          if-no-files-found: ignore
+      - name: Verify container dependencies and writable data
+        run: |
+          docker build -t adguard-familia:ci .
+          docker run --rm --read-only --tmpfs /tmp --tmpfs /data:uid=10001,gid=10001 --env DEMO=true --entrypoint python adguard-familia:ci -c "import app, pynintendoparental, pynintendoauth; from zoneinfo import ZoneInfo; ZoneInfo('Europe/Madrid'); assert not app.NINTENDO.public_config()['configured']; app.NINTENDO.close()"
   publish:
     needs: test
     if: github.event_name != 'pull_request'

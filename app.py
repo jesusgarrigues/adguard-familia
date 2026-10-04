@@ -7,11 +7,14 @@ from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 from http.cookies import SimpleCookie
 import auth
+import re
+import nintendo
 
 ROOT = Path(__file__).parent
 DATA = Path(os.getenv('DATA_DIR', '/data'))
 DATA.mkdir(parents=True, exist_ok=True)
 auth.init(DATA)
+NINTENDO=nintendo.Connector(DATA)
 TOKEN = os.environ.get('APP_TOKEN', '')
 LOCK = threading.RLock()
 DB = sqlite3.connect(DATA / 'state.db', check_same_thread=False)
@@ -393,7 +396,57 @@ def scoped_state(user):
     return data
 
 
+def nintendo_state(user,force=False):
+    data=dict(NINTENDO.devices(force=force))
+    data['devices']=[d for d in data.get('devices',[]) if user['role']=='admin' or d['key'] in user['clients']]
+    return data
+
+
+def device_catalog():
+    devices=[];errors=[]
+    try: devices.extend({'key':c['name'],'name':c['name'],'provider':'adguard'} for c in api('clients')['clients'])
+    except Exception: errors.append('No se han podido leer los clientes de AdGuard')
+    ns=NINTENDO.devices()
+    devices.extend({'key':d['key'],'name':d['name'],'provider':'nintendo'} for d in ns.get('devices',[]))
+    if ns.get('error'): errors.append(ns['error'])
+    return {'devices':devices,'errors':errors}
+
+
+def operation_key(user,body,kind='direct'):
+    value=body.get('operation_id','')
+    if not isinstance(value,str) or not re.fullmatch(r'[A-Za-z0-9_-]{16,80}',value): raise ValueError('Identificador de operación inválido. Recarga el panel.')
+    return kind+':'+str(user['id'])+':'+value
+
+
+def grant_access(client,service,minutes,operation_id=None,extend_bedtime=False):
+    if client.startswith('nintendo:'):
+        if service!='@nintendo': raise ValueError('Servicio Nintendo inválido')
+        if not operation_id: raise ValueError('Falta identificador de operación')
+        return NINTENDO.grant(client,minutes,operation_id,extend_bedtime=extend_bedtime)
+    if extend_bedtime: raise ValueError('La ampliación del horario de descanso solo se admite para Nintendo')
+    permit(client,service,minutes)
+    return {'status':'confirmed','ok':True}
+
+
+def refresh_nintendo_requests():
+    NINTENDO.refresh_pending()
+    with auth.LOCK:
+        rows=auth.DB.execute("SELECT id FROM requests WHERE client LIKE 'nintendo:%' AND status='approved_pending'").fetchall()
+        for row in rows:
+            op=NINTENDO.operation_status('request:'+str(row['id']))
+            # A crash before the connector persisted its ledger must never
+            # trigger an automatic replay of an additive Nintendo grant.
+            status='approval_error' if not op else 'approved' if op.get('status')=='confirmed' else 'approval_error' if op.get('status')=='failed' else None
+            if status:
+                auth.DB.execute('UPDATE requests SET status=? WHERE id=?',(status,row['id']))
+                auth.audit(None,'nintendo_request_synced',{'id':row['id'],'status':status})
+        auth.DB.commit()
+
+
 def validate_request(client,service):
+    if client.startswith('nintendo:'):
+        if service!='@nintendo': raise ValueError('Servicio Nintendo inválido')
+        return NINTENDO.validate(client,5)
     clients={c['name']:c for c in api('clients')['clients']}
     if client not in clients: raise ValueError('Cliente desconocido')
     base=(baseline_for(client) or {}).get('base',clients[client])
@@ -409,6 +462,8 @@ def worker():
             try: reconcile();poll();LAST_ERROR=''
             except AdGuardError as e: LAST_ERROR=str(e)
             except Exception: LAST_ERROR='Fallo al sincronizar AdGuard. Revisa el diagnóstico del servidor.';logging.error('Error interno de sincronización (sin datos de credenciales)')
+        try: refresh_nintendo_requests()
+        except Exception: logging.warning('Nintendo: no se ha podido actualizar el estado de confirmación')
         time.sleep(10)
 
 
@@ -454,9 +509,15 @@ class Handler(BaseHTTPRequestHandler):
                 if self.path=='/api/users': return self.respond(200,{'users':[auth.public(r) for r in auth.DB.execute('SELECT * FROM users')]})
                 if self.path=='/api/audit': return self.respond(200,{'entries':[dict(r) for r in auth.DB.execute('SELECT a.*,u.username FROM audit a LEFT JOIN users u ON a.user_id=u.id ORDER BY a.id DESC LIMIT 200')]})
             if self.path=='/api/requests': return self.respond(200,{'requests':auth.requests_for(user)})
+            if self.path=='/api/nintendo/config':
+                auth.require(user,'admin');return self.respond(200,NINTENDO.public_config())
+            if self.path in ('/api/nintendo/state','/api/nintendo/state?refresh=1'): return self.respond(200,nintendo_state(user,force=self.path.endswith('?refresh=1')))
+            if self.path=='/api/devices':
+                auth.require(user,'admin');return self.respond(200,device_catalog())
             if self.path=='/api/state':
                 with LOCK: return self.respond(200,scoped_state(user))
             self.respond(404,{'error':'No encontrado'})
+        except nintendo.NintendoError as e: self.respond(502,{'error':str(e)})
         except auth.Forbidden as e: self.respond(403,{'error':str(e)})
         except AdGuardError as e: self.respond(502,{'error':str(e),'diagnostic':e.detail})
         except Exception: self.respond(502,{'error':'No se puede leer AdGuard. Revisa el diagnóstico en Servidor.'})
@@ -472,15 +533,45 @@ class Handler(BaseHTTPRequestHandler):
             if not user: return self.respond(401,{'error':'Inicia sesión para continuar'})
             if not hmac.compare_digest(self.headers.get('X-CSRF-Token',''),user['csrf']): raise auth.Forbidden('Sesión inválida. Vuelve a entrar')
             if self.path=='/api/auth/logout': auth.logout(self.cookie_token());return self.respond(200,{'ok':True})
+            if self.path.startswith('/api/nintendo/'):
+                auth.require(user,'admin')
+                if self.path=='/api/nintendo/login/begin': return self.respond(200,NINTENDO.begin_login())
+                if self.path=='/api/nintendo/login/complete':
+                    result=NINTENDO.complete_login(body['state_id'],body['response_url'],body.get('timezone','Europe/Madrid'));auth.audit(user,'nintendo_connected',{});return self.respond(200,result)
+                if self.path=='/api/nintendo/disconnect':
+                    NINTENDO.disconnect();auth.audit(user,'nintendo_disconnected',{});return self.respond(200,{'ok':True})
+                return self.respond(404,{'error':'No encontrado'})
             if self.path=='/api/users': return self.respond(200,{'user':auth.save_user(user,body)})
             if self.path in ('/api/global','/api/server','/api/server/test','/api/client/add'): auth.require(user,'admin')
             if self.path=='/api/server/test': return self.respond(200,save_server(body,True))
             if self.path=='/api/request/withdraw': auth.withdraw(user,body['id']);return self.respond(200,{'ok':True})
-            if self.path=='/api/permit': auth.grant(user,body['client'],body['minutes'])
+            if self.path=='/api/permit':
+                auth.grant(user,body['client'],body['minutes'])
+                auth.bedtime_option(body,body['client'])
             if self.path=='/api/cancel': auth.grant(user,body['client'])
             if self.path=='/api/client': auth.grant(user,body['client'],edit=True)
             if self.path=='/api/request': auth.require(user,'solicitante');auth.scoped(user,body['client'])
-            if self.path=='/api/request/review': auth.require(user,'admin','responsable')
+            if self.path=='/api/request/review':
+                auth.require(user,'admin','responsable')
+                if type(body.get('id')) is not int or body['id']<=0: raise ValueError('Identificador de solicitud inválido')
+            if self.path=='/api/request' and str(body.get('client','')).startswith('nintendo:'):
+                if type(body.get('minutes')) is not int or body['minutes'] not in (5,10,15,20,25,30): raise ValueError('Nintendo admite entre 5 y 30 minutos, en pasos de 5')
+                return self.respond(200,{'ok':True,'id':auth.request_access(user,body,validate_request)})
+            if self.path=='/api/request/review':
+                with auth.LOCK: requested=auth.DB.execute('SELECT client FROM requests WHERE id=?',(body['id'],)).fetchone()
+                if requested and requested['client'].startswith('nintendo:'):
+                    result=auth.review(user,body,lambda c,s,m,extend_bedtime=False: grant_access(c,s,m,'request:'+str(body['id']),extend_bedtime=extend_bedtime)) or {'ok':True}
+                    if result.get('status')=='failed': return self.respond(409,dict(result,error=result.get('message','Nintendo ha rechazado el cambio')))
+                    return self.respond(200,result)
+            if self.path in ('/api/permit','/api/cancel') and str(body.get('client','')).startswith('nintendo:'):
+                if body.get('service')!='@nintendo': raise ValueError('Servicio Nintendo inválido')
+                op=operation_key(user,body,'cancel' if self.path=='/api/cancel' else 'direct')
+                extend_bedtime=auth.bedtime_option(body,body['client']) if self.path=='/api/permit' else False
+                auth.audit(user,'nintendo_operation_requested',{'client':body['client'],'minutes':body.get('minutes'),'operation_id':op,'kind':self.path,'extend_bedtime':extend_bedtime})
+                result=NINTENDO.grant(body['client'],body['minutes'],op,extend_bedtime=extend_bedtime) if self.path=='/api/permit' else NINTENDO.cancel(body['client'],op)
+                auth.audit(user,'nintendo_operation_result',{'operation_id':op,'status':result['status']})
+                if result.get('status')=='failed': return self.respond(409,dict(result,error=result.get('message','Nintendo ha rechazado el cambio')))
+                return self.respond(200,result)
             with LOCK:
                 result={'ok':True}
                 if self.path=='/api/permit': permit(body['client'],body['service'],body['minutes'])
@@ -489,11 +580,25 @@ class Handler(BaseHTTPRequestHandler):
                 elif self.path=='/api/client/add': save_client('',body['patch'],True)
                 elif self.path=='/api/global': save_global(body['patch'])
                 elif self.path=='/api/server': result=save_server(body)
-                elif self.path=='/api/request': result={'ok':True,'id':auth.request_access(user,body,validate_request)}
-                elif self.path=='/api/request/review': auth.review(user,body,permit)
+                elif self.path=='/api/request':
+                    if str(body.get('client','')).startswith('nintendo:'):
+                        if type(body.get('minutes')) is not int or body['minutes'] not in (5,10,15,20,25,30): raise ValueError('Nintendo admite entre 5 y 30 minutos, en pasos de 5')
+                    result={'ok':True,'id':auth.request_access(user,body,validate_request)}
+                elif self.path=='/api/request/review':
+                    result=auth.review(user,body,lambda c,s,m,extend_bedtime=False: grant_access(c,s,m,'request:'+str(body['id']),extend_bedtime=extend_bedtime)) or {'ok':True}
                 else: return self.respond(404,{'error':'No encontrado'})
                 if self.path not in ('/api/request','/api/request/review'): auth.audit(user,self.path,{'client':body.get('client'),'service':body.get('service'),'minutes':body.get('minutes')})
+                if result.get('status')=='failed': return self.respond(409,dict(result,error=result.get('message','Nintendo ha rechazado el cambio')))
                 self.respond(200,result)
+        except nintendo.NintendoError as e:
+            data={'error':str(e)}
+            if self.path in ('/api/permit','/api/cancel') and 'op' in locals():
+                try:
+                    operation=NINTENDO.operation_status(op)
+                    data['operation_started']=operation is not None
+                    if operation: data['operation']=operation
+                except Exception: pass
+            self.respond(502,data)
         except auth.Forbidden as e: self.respond(403,{'error':str(e)})
         except AdGuardError as e: self.respond(502,{'error':str(e),'diagnostic':e.detail})
         except (ValueError,KeyError,TypeError) as e: self.respond(400,{'error':str(e)})

@@ -4,7 +4,20 @@ from pathlib import Path
 
 initial=secrets.token_urlsafe(32)
 env=dict(os.environ,DATA_DIR=tempfile.mkdtemp(),DEMO='true',APP_TOKEN=initial)
-process=subprocess.Popen(['python','app.py'],env=env)
+# Keep the HTTP/session/CSRF layer real; simulate only the remote Nintendo API.
+launcher="""import threading
+from datetime import datetime
+from zoneinfo import ZoneInfo
+from http.server import ThreadingHTTPServer
+import app, nintendo
+from test_nintendo import FakeBackend
+app.NINTENDO.close()
+fixed_time=datetime(2026,9,4,18,0,tzinfo=ZoneInfo('Europe/Madrid')).timestamp()
+app.NINTENDO=nintendo.Connector(app.DATA,backend_factory=FakeBackend,clock=lambda:fixed_time)
+threading.Thread(target=app.worker,daemon=True).start()
+ThreadingHTTPServer(('127.0.0.1',8080),app.Handler).serve_forever()
+"""
+process=subprocess.Popen(['python','-c',launcher],env=env)
 
 class Client:
     def __init__(self): self.opener=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()));self.csrf=''
@@ -39,8 +52,29 @@ try:
     observer=Client();observer.call('auth/login',{'username':'observer','password':'observer-password-1234'})
     observer.call('cancel',{'client':'iMac de Emma','service':'youtube'},403)
     parent.call('client',{'client':'iMac de Emma','patch':{'parental_enabled':False}},403)
+    child.call('nintendo/login/begin',{},403)
+    login=admin.call('nintendo/login/begin',{})
+    connected=admin.call('nintendo/login/complete',{'state_id':login['state_id'],'response_url':'npf54789bef://auth#state=oauth-state&session_token_code=private-test-code','timezone':'Europe/Madrid'})
+    assert connected['configured'] and connected['devices'][0]['key']=='nintendo:ABC'
+    assert 'private-test-code' not in json.dumps(connected)
+    child_user=next(u for u in admin.call('users')['users'] if u['username']=='emma')
+    parent_user=next(u for u in admin.call('users')['users'] if u['username']=='parent')
+    for user in (child_user,parent_user):admin.call('users',dict(user,clients=['iMac de Emma','nintendo:ABC']))
+    child.call('auth/login',{'username':'emma','password':'emma-password-1234'})
+    parent.call('auth/login',{'username':'parent','password':'parent-password-1234'})
+    assert [d['key'] for d in child.call('nintendo/state')['devices']]==['nintendo:ABC']
+    child.call('permit',{'client':'nintendo:ABC','service':'@nintendo','minutes':20,'extend_bedtime':True,'operation_id':secrets.token_hex(16)},403)
+    native_id=child.call('request',{'client':'nintendo:ABC','service':'@nintendo','minutes':20,'extend_bedtime':True})['id']
+    requested=next(r for r in parent.call('requests')['requests'] if r['id']==native_id)
+    assert requested['status']=='pending' and requested['extend_bedtime']
+    parent.call('request/review',{'id':native_id,'decision':'approve','minutes':20,'extend_bedtime':False})
+    approved=next(r for r in child.call('requests')['requests'] if r['id']==native_id)
+    assert approved['status']=='approved' and not approved['approved_extend_bedtime']
+    state=child.call('nintendo/state?refresh=1')
+    assert state['devices'][0]['extra_minutes']==20
+    assert observer.call('nintendo/state')['devices']==[]
     for path in ('manifest.webmanifest','sw.js','icon-192.png','icon-512.png'):
         with urllib.request.urlopen('http://127.0.0.1:8080/'+path) as response:assert response.status==200
     child.call('auth/logout',{});child.call('me',expected=401)
-    print('HTTP smoke passed: bootstrap, accounts, scoped roles, mandatory approval, session logout and PWA assets')
+    print('HTTP smoke passed: scoped roles, mandatory approval, optional Nintendo bedtime approval, session logout and PWA assets')
 finally:process.terminate();process.wait(timeout=5)

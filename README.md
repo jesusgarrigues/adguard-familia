@@ -1,6 +1,6 @@
 # AdGuard Familia
 
-Panel autohospedable para AdGuard Home, orientado a cada cliente. Lee los clientes y sus ajustes dinámicamente, gestiona la configuración global y las personalizaciones y levanta restricciones durante un plazo concreto.
+Panel familiar autohospedable para AdGuard Home y Nintendo Switch. Lee los clientes y sus ajustes dinámicamente, gestiona la configuración global y las personalizaciones y permite solicitar y aprobar excepciones temporales.
 
 ## Instalar desde Docker Hub
 
@@ -31,6 +31,8 @@ AdGuard tiene dos grupos independientes:
 - **Servicios globales:** servicios bloqueados y sus pausas programadas.
 
 Cada ficha muestra las restricciones configuradas y permite levantarlas temporalmente, por ejemplo YouTube durante 20 minutos para el iMac de Emma. Un permiso crea una personalización temporal únicamente en el grupo correspondiente; al vencer vuelve a la configuración permanente y a su herencia. Mientras dura, los ajustes heredados siguen los cambios globales actuales.
+
+La vista principal usa tarjetas compactas con nombre, icono, servicios restringidos y permisos con tiempo restante. Al pulsar una tarjeta se abre su detalle: excepciones activas visibles al principio, **Favoritos** para lo habitual, **Todos los servicios** con buscador y categorías para listas largas y **Ajustes** con la configuración del cliente. Los favoritos se guardan por cuenta y cliente en ese navegador. Los iconos del catálogo se obtienen de AdGuard, se filtran antes de mostrarlos y usan un icono de categoría cuando no hay uno disponible. La misma distribución se adapta al móvil.
 
 **Configurar cliente** incluye nombre, identificadores IP/CIDR/MAC/ClientID, etiquetas, ambas herencias, filtrado, navegación segura, control parental, búsqueda segura por motor, servicios, pausas semanales, zona horaria, DNS propios, caché y exclusión de registros y estadísticas. Usa la API de clientes de AdGuard Home; los campos que no se editan se conservan.
 
@@ -63,10 +65,13 @@ docker compose -f compose.build.yaml up -d --build
 El modo demostración simula Emma y Martín; no cambia ningún AdGuard real. El diseño sigue la maqueta oscura con clientes, permisos con cuenta atrás, actividad y ajustes.
 
 ```sh
-python -m unittest -v test_app.py
+python -m pip install -r requirements.txt
+python -m unittest -v test_app.py test_diagnostics.py test_auth.py test_nintendo.py test_nintendo_routes.py
+python test_http.py
+node test_ui.cjs
 ```
 
-Pruebas de caducidad tras reinicio, permisos simultáneos, herencia global, cambios globales y de cliente durante permisos, recuperación de errores, clientes dinámicos, validación y protección de credenciales. La integración debe verificarse con la versión instalada de AdGuard Home; las pruebas locales usan el simulador.
+Pruebas de caducidad tras reinicio, permisos simultáneos, herencia global, cambios globales y de cliente durante permisos, recuperación de errores, clientes dinámicos, validación y protección de credenciales. La integración debe verificarse con la versión instalada de AdGuard Home; las pruebas locales usan el simulador. El workflow también ejecuta `test_browser.cjs` con Playwright para comprobar escritorio, móvil, favoritos, categorías, ajustes y preservación de formularios; sus capturas se guardan en el artefacto `ui-previews`.
 
 ## Publicar en GitHub y Docker Hub
 
@@ -79,7 +84,7 @@ No subas el token a archivos ni commits. Crea el repositorio Docker Hub `adguard
 
 ## Diagnóstico de conexión
 
-En **Servidor**, usa **Probar conexión** y **Actualizar diagnóstico**. El panel distingue HTTP 401/403/404, timeout, DNS, conexión rechazada, certificados y respuestas no JSON, indicando el endpoint. Los últimos 100 resultados se conservan en memoria; los fallos se registran también con `docker compose logs --tail=100 adguard-familia`. No se registran contraseñas ni cabeceras de autorización. La actualización automática se pausa en Servidor y mientras se editan formularios.
+En **Servidor**, usa **Probar conexión** y **Actualizar diagnóstico**. El panel distingue HTTP 401/403/404, timeout, DNS, conexión rechazada, certificados y respuestas no JSON, indicando el endpoint. Los últimos 100 resultados se conservan en memoria; los fallos se registran también con `docker compose logs --tail=100 companion`. No se registran contraseñas ni cabeceras de autorización. La actualización automática se pausa en Servidor y mientras se editan formularios.
 
 ## Usuarios, roles y solicitudes
 
@@ -115,3 +120,23 @@ docker compose up -d
 ```
 
 Después recarga el navegador. No borres los volúmenes. Los archivos de cuentas, sesiones y auditoría se guardan en `/data/accounts.db`.
+
+## Nintendo: conexión directa y tiempo extra
+
+Esta integración conecta directamente con Nintendo Switch Parental Controls; no necesita Home Assistant. Se implementa mediante `pynintendoparental==2.6.3`, una biblioteca no oficial. Depende de la nube de Nintendo y la consola necesita Internet para sincronizar. No se incluyen integraciones asistidas.
+
+1. Entra como administrador y abre **Servidor → Nintendo**.
+2. Pulsa **Conectar Nintendo**. Se abre el inicio de sesión de la cuenta oficial; la contraseña no se introduce en esta app.
+3. Realiza el proceso en un ordenador/navegador sin la app oficial de controles parentales que capture la redirección. En la pantalla de selección de cuenta, copia la dirección del botón **Seleccionar esta persona**, sin abrirlo, y pégala en el formulario de conexión. Es un enlace sensible: no lo compartas en chat ni registros.
+4. Confirma la zona horaria de la consola, por defecto `Europe/Madrid`.
+5. En **Usuarios**, asigna la consola a los responsables y solicitantes correspondientes. Los límites son por consola, no por jugador individual.
+
+Las tarjetas Nintendo muestran tiempo jugado, minutos restantes según Nintendo, límite del día y modo de suspensión. **Añadir tiempo** concede entre 5 y 30 minutos, en pasos de 5. Un solicitante solo puede pedirlo; un responsable autorizado debe aprobar. Los minutos se consumen al jugar hoy: no son una cuenta atrás desde la aprobación.
+
+**Permitir ampliar el horario de descanso** es una opción explícita de cada permiso. El solicitante puede pedirla y el adulto decide si autorizarla, independientemente de los minutos. Por defecto está desactivada. La app comprueba el estado actual antes de escribir y confirma el resultado mediante una nueva lectura. Si Nintendo exige una ampliación nocturna y no está autorizada, el permiso se rechaza. Si está autorizada, la ampliación adicional se confirma únicamente cuando Nintendo la requiere; una respuesta incierta permanece pendiente y no provoca reenvíos automáticos. Los ajustes permanentes se conservan.
+
+Los cambios se registran con un identificador único antes de enviarse. Si hay un timeout, se conserva **Pendiente de confirmar** y solo se consulta el estado; no se reenvía automáticamente una concesión que podría duplicar minutos. Mientras haya una operación incierta no se concede otro bonus en la misma consola. **Confirmado por Nintendo** describe el estado en su nube; la consola puede tardar en sincronizar y se muestra la última sincronización. La cancelación se ofrece solo cuando se puede identificar que todo el tiempo extra actual corresponde a una concesión propia de esta app; no se elimina tiempo concedido desde otra aplicación.
+
+La integración requiere validar el inicio de sesión y la sincronización contra tu consola real. Las pruebas automatizadas verifican contratos de la biblioteca, alcance de roles, aprobación separada del descanso, conflictos, persistencia e idempotencia con un proveedor simulado; no equivalen a una prueba con una cuenta Nintendo real.
+
+Los tokens de conexión se guardan únicamente en el volumen `/data` con permisos restringidos; nunca se devuelven al navegador ni aparecen en los diagnósticos. Conserva el volumen en las actualizaciones.

@@ -1,0 +1,88 @@
+const fs=require('node:fs');
+const assert=require('node:assert/strict');
+const {chromium}=require('playwright');
+const root=process.env.APP_SOURCE||process.cwd();
+const shots=process.env.SCREENSHOT_DIR||'/tmp/adguard-ui-review';
+fs.mkdirSync(shots,{recursive:true});
+const cleanSvg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#85efc3" d="M3 3h18v18H3z"/></svg>';
+const ids=['youtube','tiktok','netflix','twitch','discord','instagram','facebook','snapchat','reddit','telegram','whatsapp','steam','epic_games','roblox','minecraft','xboxlive','playstation','amazon','ebay','aliexpress',...Array.from({length:45},(_,i)=>'service_'+i)];
+const names={youtube:'YouTube',tiktok:'TikTok',netflix:'Netflix',twitch:'Twitch',discord:'Discord',instagram:'Instagram',steam:'Steam',epic_games:'Epic Games',roblox:'Roblox'};
+const services=ids.map((id,i)=>({id,name:names[id]||id.replaceAll('_',' '),icon_svg:i%2?cleanSvg:Buffer.from(cleanSvg).toString('base64')}));
+const safe={enabled:true,bing:true,duckduckgo:true,ecosia:true,google:true,pixabay:true,yandex:true,youtube:true};
+const globalConfig={filtering_enabled:true,parental_enabled:true,safebrowsing_enabled:true,safe_search:safe,blocked_services:{ids,schedule:{time_zone:'Europe/Madrid'}},protection_enabled:true};
+const clients=['iMac de Emma','iMac de Martín','iPad familiar',...Array.from({length:7},(_,i)=>'Dispositivo '+(i+1))].map((name,i)=>({name,ids:['192.168.1.'+(20+i)],use_global_settings:true,use_global_blocked_services:true,filtering_enabled:true,parental_enabled:true,safebrowsing_enabled:true,safe_search:safe,blocked_services:[],upstreams:[],tags:['device_pc'],ignore_querylog:false,ignore_statistics:false,upstreams_cache_enabled:false,upstreams_cache_size:0}));
+const effective={filtering_enabled:true,parental_enabled:true,safebrowsing_enabled:true,safe_search:safe,blocked_services:ids,blocked_services_schedule:{time_zone:'Europe/Madrid'},protection_enabled:true};
+const state={clients,base_clients:Object.fromEntries(clients.map(c=>[c.name,c])),effective:Object.fromEntries(clients.map(c=>[c.name,effective])),base_effective:Object.fromEntries(clients.map(c=>[c.name,effective])),services,global_config:globalConfig,leases:[{client:'iMac de Emma',service:'youtube',expires:Date.now()/1000+1200},{client:'iMac de Emma',service:'service_44',expires:Date.now()/1000+1800}],events:[],requests:[],supported_tags:['device_pc','device_phone','user_child'],auto_clients:[],server:{},demo:true,error:''};
+const native={configured:true,devices:[{id:'ABC',key:'nintendo:ABC',name:'Switch de Martín',model:'Switch',used_minutes:60,remaining_minutes:20,limit_minutes:60,extra_minutes:20,bedtime:'21:00',forced_termination:true,alarms_enabled:true,last_sync:Date.now()/1000,console_sync_pending:false,available:true,can_grant:true,can_grant_with_bedtime:true,can_cancel:false,pending_operation:null}]};
+const requests=[{id:1,user_id:2,username:'martin',client:'nintendo:ABC',service:'@nintendo',minutes:20,reason:'Jugar con mis amigos',status:'pending',created:Date.now()/1000,extend_bedtime:true,approved_extend_bedtime:null}];
+const user={id:1,username:'admin',role:'admin',clients:[],edit_policy:true,max_minutes:1440};
+const calls=[];let adguardDown=false;
+(async()=>{
+ const browser=await chromium.launch({executablePath:process.env.CHROMIUM_EXECUTABLE||['/usr/bin/chromium','/usr/bin/google-chrome','/opt/google/chrome/chrome'].find(fs.existsSync),headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--disable-breakpad','--disable-crash-reporter']});
+ try{
+ const context=await browser.newContext({viewport:{width:1440,height:1080}});
+ await context.route('**/*',async route=>{
+  const req=route.request(),url=new URL(req.url());
+  if(url.pathname.startsWith('/api/')){
+   if(url.pathname==='/api/state'&&adguardDown)return route.fulfill({status:502,contentType:'application/json',body:JSON.stringify({error:'AdGuard unavailable fixture'})});
+   const path=url.pathname.slice(5);let body=null;
+   if(req.method()==='POST'){body=req.postDataJSON();calls.push({path,body});}
+   const data=path==='me'?{user,csrf:'fixture-csrf'}:path==='state'?state:path==='nintendo/state'?native:path==='requests'?{requests}:path==='auth/status'?{configured:true}:path==='nintendo/config'?{configured:true,timezone:'Europe/Madrid'}:path==='server'?{url:'http://192.168.1.2:3000',username:'admin',demo:true}:path==='diagnostics'?{entries:[]}:body?{ok:true,status:path==='permit'?'confirmed':undefined}:{ok:true};
+   return route.fulfill({contentType:'application/json',body:JSON.stringify(data)});
+  }
+  if(url.pathname==='/')return route.fulfill({contentType:'text/html',body:fs.readFileSync(root+'/index.html','utf8')});
+  return route.fulfill({status:404,body:'not found'});
+ });
+ const page=await context.newPage();page.setDefaultTimeout(10000);const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto('http://preview.local/');await page.locator('[data-client-card]').first().waitFor();
+ assert.equal(await page.locator('[data-client-card]').count(),10);
+ assert.equal(await page.locator('[data-client-card] .service-detail').count(),0);
+ const sanitizer=await page.evaluate(()=>{const source='<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" onload="window.bad=1"><script>window.bad=1</script><foreignObject><div>evil</div></foreignObject><path d="M0 0h2v2z" fill="url(https://evil.test/a)" style="fill:red" onclick="window.bad=2" xlink:href="https://evil.test/a"/><image href="https://evil.test/a"/></svg>';const svg=safeServiceSvg(source);return {markup:svg?.outerHTML,bad:window.bad||null,base64:!!safeServiceSvg(btoa('<svg><path d="M0 0h1v1z"/></svg>'))}});
+ assert.ok(sanitizer.base64);assert.equal(sanitizer.bad,null);assert.ok(!/script|foreignObject|onload|onclick|href|style=|url\(/.test(sanitizer.markup));
+ await page.screenshot({path:shots+'/desktop-clientes.png',fullPage:true});
+ await page.locator('[data-client-card="iMac de Emma"]').click();
+ await page.locator('#adguard-dialog-backdrop').waitFor();
+ assert.ok(await page.locator('#adguard-service-list [data-service-row="service_44"]').isVisible());
+ await page.screenshot({path:shots+'/desktop-favoritos.png'});
+ await page.getByRole('button',{name:'Todos los servicios',exact:true}).click();
+ assert.ok(await page.locator('#adguard-service-list .service-category').count()>2);
+ assert.equal(await page.locator('#adguard-service-list .service-category[open]').count(),0);
+ await page.screenshot({path:shots+'/desktop-todos.png'});
+ await page.locator('#adguard-service-list .service-category').filter({hasText:'Juegos'}).locator('summary').click();
+ await page.locator('#adguard-service-list [data-favorite="steam"]').click();
+ assert.ok(await page.locator('#adguard-service-list .service-category').filter({hasText:'Juegos'}).evaluate(d=>d.open));
+ await page.evaluate(()=>refresh(true));
+ assert.ok(await page.locator('#adguard-service-list .service-category').filter({hasText:'Juegos'}).evaluate(d=>d.open));
+ await page.locator('#adguard-service-search').fill('Steam');
+ assert.equal(await page.locator('#adguard-service-list [data-service-row]').count(),1);
+ await page.getByRole('button',{name:'⚙ Ajustes',exact:true}).click();
+ await page.locator('#c-name').fill('iMac de Emma · borrador');
+ await page.evaluate(()=>refresh(false));assert.equal(await page.locator('#c-name').inputValue(),'iMac de Emma · borrador');
+ await page.screenshot({path:shots+'/desktop-ajustes.png'});
+ page.once('dialog',d=>d.accept());await page.locator('#adguard-dialog-backdrop').getByRole('button',{name:'Cerrar',exact:true}).click();
+ await page.setViewportSize({width:390,height:844});
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+ await page.screenshot({path:shots+'/movil-clientes.png',fullPage:true});
+ await page.locator('[data-client-card="iMac de Emma"]').click();
+ await page.getByRole('button',{name:'Todos los servicios',exact:true}).click();
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+ await page.screenshot({path:shots+'/movil-todos.png'});
+ await page.getByRole('button',{name:'⚙ Ajustes',exact:true}).click();
+ await page.screenshot({path:shots+'/movil-ajustes.png'});
+ await page.locator('#adguard-dialog-backdrop').getByRole('button',{name:'Cerrar',exact:true}).click();
+ await page.locator('[data-console="nintendo:ABC"]').click();
+ await page.locator('[data-extend-bedtime]').check();
+ await page.screenshot({path:shots+'/movil-nintendo.png'});
+ await page.locator('#nintendo-dialog-backdrop').getByRole('button',{name:'Cerrar',exact:true}).click();
+ await page.locator('[data-console="nintendo:ABC"]').click();assert.equal(await page.locator('[data-extend-bedtime]').isChecked(),true);await page.evaluate(()=>refreshNintendoOnly());assert.equal(await page.locator('[data-extend-bedtime]').isChecked(),true);
+ await page.locator('#nintendo-dialog-backdrop').getByRole('button',{name:'Cerrar',exact:true}).click();
+ await page.evaluate(()=>{me={...me,role:'solicitante',id:2,clients:['iMac de Emma','nintendo:ABC']};go('clients')});
+ await page.locator('[data-client-card="iMac de Emma"]').click();assert.equal(await page.locator('#adguard-dialog-backdrop').getByRole('button',{name:/Ajustes/}).count(),0);assert.ok(await page.locator('#adguard-dialog-backdrop').getByRole('button',{name:'Solicitar',exact:true}).count()>0);assert.equal(await page.locator('#adguard-dialog-backdrop').getByRole('button',{name:'Permitir',exact:true}).count(),0);
+ await page.locator('#adguard-dialog-backdrop').getByRole('button',{name:'Cerrar',exact:true}).click();
+ await page.evaluate(()=>{me={...me,role:'responsable',edit_policy:false,max_minutes:30};go('requests')});
+ await page.locator('#review-bedtime-1').waitFor();assert.equal(await page.locator('#review-bedtime-1').isChecked(),false);
+ adguardDown=true;await page.evaluate(()=>{state=null;dirty=false;go('clients');return refresh(true)});assert.ok(await page.locator('[data-console="nintendo:ABC"]').isVisible());
+ assert.deepEqual(errors,[]);
+ console.log(JSON.stringify({passed:true,screenshots:shots,sanitizer,calls},null,2));
+ }finally{await browser.close()}
+})().catch(e=>{console.error(e.stack);process.exitCode=1});

@@ -18,6 +18,9 @@ def init(folder):
     CREATE TABLE IF NOT EXISTS requests(id INTEGER PRIMARY KEY,user_id INTEGER,client TEXT,service TEXT,minutes INTEGER,reason TEXT,status TEXT,created REAL,reviewer INTEGER,reviewed REAL,approved_minutes INTEGER);
     CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY,time REAL,user_id INTEGER,action TEXT,detail TEXT);
     CREATE TABLE IF NOT EXISTS attempts(key TEXT PRIMARY KEY,count INTEGER,until REAL);''')
+    columns={row['name'] for row in DB.execute('PRAGMA table_info(requests)')}
+    if 'extend_bedtime' not in columns: DB.execute('ALTER TABLE requests ADD COLUMN extend_bedtime INTEGER NOT NULL DEFAULT 0')
+    if 'approved_extend_bedtime' not in columns: DB.execute('ALTER TABLE requests ADD COLUMN approved_extend_bedtime INTEGER')
     DB.commit()
 
 
@@ -124,27 +127,39 @@ def grant(user,client,minutes=None,edit=False):
     if minutes is not None and (type(minutes) is not int or not 1<=minutes<=user['max_minutes']): raise ValueError('La duración supera tu límite de '+str(user['max_minutes'])+' minutos')
 
 
+def bedtime_option(body,client):
+    value=body.get('extend_bedtime',False)
+    if type(value) is not bool: raise ValueError('La opción de ampliar el horario de descanso debe ser booleana')
+    if value and not client.startswith('nintendo:'): raise ValueError('La ampliación del horario de descanso solo se admite para Nintendo')
+    return value
+
+
 def request_access(user,body,validate):
     require(user,'solicitante');client,service,minutes=body['client'],body['service'],body['minutes'];scoped(user,client)
     if type(minutes) is not int or not 1<=minutes<=1440: raise ValueError('Duración inválida')
+    extend_bedtime=bedtime_option(body,client)
     reason=body.get('reason','')
     if not isinstance(reason,str) or len(reason)>1000: raise ValueError('Motivo demasiado largo')
     validate(client,service)
     with LOCK:
         if DB.execute("SELECT 1 FROM requests WHERE user_id=? AND client=? AND service=? AND status='pending'",(user['id'],client,service)).fetchone(): raise ValueError('Ya tienes una solicitud pendiente para esta restricción')
-        rid=DB.execute("INSERT INTO requests(user_id,client,service,minutes,reason,status,created) VALUES(?,?,?,?,?,'pending',?)",(user['id'],client,service,minutes,reason,time.time())).lastrowid
-        DB.commit();audit(user,'request_created',{'id':rid,'client':client,'service':service,'minutes':minutes});return rid
+        rid=DB.execute("INSERT INTO requests(user_id,client,service,minutes,reason,status,created,extend_bedtime) VALUES(?,?,?,?,?,'pending',?,?)",(user['id'],client,service,minutes,reason,time.time(),int(extend_bedtime))).lastrowid
+        DB.commit();audit(user,'request_created',{'id':rid,'client':client,'service':service,'minutes':minutes,'extend_bedtime':extend_bedtime});return rid
 
 
 def requests_for(user):
     with LOCK:
         DB.execute("UPDATE requests SET status='expired' WHERE status='pending' AND created<?",(time.time()-86400,));DB.commit()
         rows=[dict(r) for r in DB.execute('SELECT r.*,u.username FROM requests r JOIN users u ON r.user_id=u.id ORDER BY r.id DESC LIMIT 1000')]
+        for row in rows:
+            row['extend_bedtime']=bool(row['extend_bedtime'])
+            row['approved_extend_bedtime']=None if row['approved_extend_bedtime'] is None else bool(row['approved_extend_bedtime'])
     return [r for r in rows if user['role']=='admin' or (r['user_id']==user['id'] if user['role']=='solicitante' else r['client'] in user['clients'])]
 
 
 def review(user,body,permit):
     require(user,'admin','responsable')
+    if type(body.get('id')) is not int or body['id']<=0: raise ValueError('Identificador de solicitud inválido')
     with LOCK:
         row=DB.execute('SELECT * FROM requests WHERE id=?',(body['id'],)).fetchone()
         if not row: raise ValueError('Solicitud desconocida')
@@ -152,13 +167,20 @@ def review(user,body,permit):
         if row['status']!='pending': raise ValueError('La solicitud ya se ha resuelto')
         if row['created']<time.time()-86400: raise ValueError('La solicitud ha caducado')
         if decision not in ('approve','reject'): raise ValueError('Decisión inválida')
+        extend_bedtime=bedtime_option(body,row['client'])
         minutes=body.get('minutes',row['minutes'])
         if decision=='approve':
             grant(user,row['client'],minutes)
-            # Persist approval before contacting AdGuard. The caller persists grant intent.
-            DB.execute("UPDATE requests SET status='approved',reviewer=?,reviewed=?,approved_minutes=? WHERE id=?",(user['id'],time.time(),minutes,row['id']));DB.commit()
-            audit(user,'request_approved',{'id':row['id'],'client':row['client'],'minutes':minutes})
-            try: permit(row['client'],row['service'],minutes)
+            if row['client'].startswith('nintendo:') and minutes not in (5,10,15,20,25,30): raise ValueError('Nintendo admite entre 5 y 30 minutos, en pasos de 5')
+            # Persist approval before remote writes. Nintendo grants must not be replayed.
+            approved_bedtime=int(extend_bedtime) if row['client'].startswith('nintendo:') else None
+            DB.execute("UPDATE requests SET status='approved_pending',reviewer=?,reviewed=?,approved_minutes=?,approved_extend_bedtime=? WHERE id=?",(user['id'],time.time(),minutes,approved_bedtime,row['id']));DB.commit()
+            audit(user,'request_approved',{'id':row['id'],'client':row['client'],'minutes':minutes,'requested_extend_bedtime':bool(row['extend_bedtime']),'approved_extend_bedtime':extend_bedtime if approved_bedtime is not None else None})
+            try:
+                result=permit(row['client'],row['service'],minutes,extend_bedtime=extend_bedtime) if approved_bedtime is not None else permit(row['client'],row['service'],minutes)
+                status='approval_error' if isinstance(result,dict) and result.get('status')=='failed' else 'approved_pending' if isinstance(result,dict) and result.get('status')=='pending' else 'approved'
+                DB.execute('UPDATE requests SET status=? WHERE id=?',(status,row['id']));DB.commit()
+                return result
             except Exception:
                 DB.execute("UPDATE requests SET status='approval_error' WHERE id=?",(row['id'],));DB.commit()
                 raise
@@ -168,6 +190,7 @@ def review(user,body,permit):
 
 def withdraw(user,rid):
     require(user,'solicitante')
+    if type(rid) is not int or rid<=0: raise ValueError('Identificador de solicitud inválido')
     with LOCK:
         row=DB.execute('SELECT * FROM requests WHERE id=?',(rid,)).fetchone()
         if not row or row['user_id']!=user['id']: raise Forbidden('Esta solicitud no te pertenece')
