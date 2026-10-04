@@ -567,8 +567,15 @@ class Handler(BaseHTTPRequestHandler):
                 if body.get('service')!='@nintendo': raise ValueError('Servicio Nintendo inválido')
                 op=operation_key(user,body,'cancel' if self.path=='/api/cancel' else 'direct')
                 extend_bedtime=auth.bedtime_option(body,body['client']) if self.path=='/api/permit' else False
-                auth.audit(user,'nintendo_operation_requested',{'client':body['client'],'minutes':body.get('minutes'),'operation_id':op,'kind':self.path,'extend_bedtime':extend_bedtime})
-                result=NINTENDO.grant(body['client'],body['minutes'],op,extend_bedtime=extend_bedtime) if self.path=='/api/permit' else NINTENDO.cancel(body['client'],op)
+                cancel_options={}
+                if self.path=='/api/cancel':
+                    cancel_all=body.get('cancel_all_today',False)
+                    if type(cancel_all) is not bool: raise ValueError('Confirmación de retirada inválida')
+                    if cancel_all:
+                        if 'expected_extra_minutes' not in body or 'expected_bedtime' not in body: raise ValueError('Actualiza el tiempo extra antes de confirmar la retirada')
+                        cancel_options={'cancel_all_today':True,'expected_extra_minutes':body['expected_extra_minutes'],'expected_bedtime':body['expected_bedtime']}
+                auth.audit(user,'nintendo_operation_requested',{'client':body['client'],'minutes':body.get('minutes'),'operation_id':op,'kind':self.path,'extend_bedtime':extend_bedtime,**cancel_options})
+                result=NINTENDO.grant(body['client'],body['minutes'],op,extend_bedtime=extend_bedtime) if self.path=='/api/permit' else NINTENDO.cancel(body['client'],op,**cancel_options)
                 auth.audit(user,'nintendo_operation_result',{'operation_id':op,'status':result['status']})
                 if result.get('status')=='failed': return self.respond(409,dict(result,error=result.get('message','Nintendo ha rechazado el cambio')))
                 return self.respond(200,result)

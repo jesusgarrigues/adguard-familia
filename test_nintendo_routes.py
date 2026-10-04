@@ -56,6 +56,25 @@ class NintendoRoutes(unittest.TestCase):
         h=self.handler(self.child,'/api/cancel',{'client':'nintendo:switch1','service':'@nintendo','operation_id':'b'*32})
         with patch.object(app.NINTENDO,'cancel') as cancel:h.do_POST();cancel.assert_not_called()
         self.assertEqual(h.respond.call_args.args[0],403)
+    def test_explicit_cancel_all_scoped_to_adult_and_current_displayed_bonus(self):
+        body={'client':'nintendo:switch1','service':'@nintendo','operation_id':'b'*32,
+              'cancel_all_today':True,'expected_extra_minutes':5,'expected_bedtime':'20:00'}
+        h=self.handler(self.parent,'/api/cancel',body)
+        with patch.object(app.NINTENDO,'cancel',return_value={'status':'confirmed'}) as cancel:h.do_POST()
+        cancel.assert_called_once_with('nintendo:switch1','cancel:'+str(self.parent['id'])+':'+'b'*32,
+                                      cancel_all_today=True,expected_extra_minutes=5,expected_bedtime='20:00')
+        self.assertEqual(h.respond.call_args.args[0],200)
+        for user,client in ((self.child,'nintendo:switch1'),(self.parent,'nintendo:switch2')):
+            h=self.handler(user,'/api/cancel',dict(body,client=client))
+            with patch.object(app.NINTENDO,'cancel') as cancel:h.do_POST();cancel.assert_not_called()
+            self.assertEqual(h.respond.call_args.args[0],403)
+    def test_cancel_all_requires_boolean_and_displayed_budget(self):
+        base={'client':'nintendo:switch1','service':'@nintendo','operation_id':'b'*32}
+        for extra in ({'cancel_all_today':'true'},{'cancel_all_today':1},{'cancel_all_today':True},
+                      {'cancel_all_today':True,'expected_extra_minutes':5}):
+            h=self.handler(self.parent,'/api/cancel',dict(base,**extra))
+            with patch.object(app.NINTENDO,'cancel') as cancel:h.do_POST();cancel.assert_not_called()
+            self.assertEqual(h.respond.call_args.args[0],400)
     def test_failed_preflight_does_not_invent_an_uncertain_operation(self):
         h=self.handler(self.parent,'/api/permit',{'client':'nintendo:switch1','service':'@nintendo','minutes':20,'operation_id':'a'*32})
         with patch.object(app.NINTENDO,'grant',side_effect=app.nintendo.NintendoError('No hay datos actuales')),patch.object(app.NINTENDO,'operation_status',return_value=None):h.do_POST()

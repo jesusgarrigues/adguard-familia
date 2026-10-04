@@ -353,16 +353,18 @@ class ConnectorTests(unittest.TestCase):
         self.assertEqual(self.grant(extend_bedtime=True)['status'], 'pending')
         self.assertEqual(self.backend.confirms, 1)
 
-    def test_suspended_or_alarm_only_console_never_receives_a_grant(self):
+    def test_hidden_alarms_and_alarm_only_mode_do_not_block_budget_management(self):
         self.connect()
         self.backend.device['restrictions_suspended'] = True
-        with self.assertRaises(nintendo.NintendoError):
-            self.grant(extend_bedtime=True)
+        self.backend.device['alarms_enabled'] = False
+        self.backend.device.update(limit_minutes=0, used_minutes=0)
+        self.backend.extra = 5
+        self.assertEqual(self.grant(extend_bedtime=True)['status'], 'confirmed')
+        self.assertEqual(self.backend.extra, 25)
         self.backend.device['restrictions_suspended'] = False
         self.backend.device['forced_termination'] = False
-        with self.assertRaises(nintendo.NintendoError):
-            self.grant()
-        self.assertEqual(self.backend.grants, 0)
+        self.assertEqual(self.grant('direct:1:alarm-only')['status'], 'confirmed')
+        self.assertEqual(self.backend.grants, 2)
 
     def test_nighttime_request_validation_does_not_mutate_or_reject_just_time(self):
         self.connect()
@@ -475,13 +477,82 @@ class ConnectorTests(unittest.TestCase):
         self.assertEqual(self.connector.cancel('nintendo:ABC', 'cancel:1:example')['status'], 'confirmed')
         self.assertEqual(self.backend.cancels, 1)
 
-    def test_cancel_never_removes_time_granted_outside_app(self):
+    def test_cancel_external_time_requires_explicit_all_today_confirmation(self):
         self.connect()
         self.backend.extra = 10
         self.grant()
-        self.assertFalse(self.connector.devices()['devices'][0]['can_cancel'])
+        self.assertTrue(self.connector.devices()['devices'][0]['can_cancel'])
         with self.assertRaises(nintendo.NintendoError):
             self.connector.cancel('nintendo:ABC', 'cancel:1:example')
+        self.assertEqual(self.backend.cancels, 0)
+
+    def test_cancel_official_app_bonus_with_zero_daily_limit(self):
+        self.backend.device.update(limit_minutes=0, used_minutes=0, alarms_enabled=False)
+        self.backend.extra = 5
+        self.connect()
+        self.assertTrue(self.connector.devices()['devices'][0]['can_cancel'])
+        result = self.connector.cancel('nintendo:ABC', 'cancel:1:official', cancel_all_today=True,
+                                       expected_extra_minutes=5, expected_bedtime='21:00')
+        self.assertEqual(result['status'], 'confirmed')
+        self.assertEqual(self.backend.extra, 0)
+        self.assertEqual(self.backend.device['limit_minutes'], 0)
+        self.assertEqual(self.backend.cancels, 1)
+        self.connector.cancel('nintendo:ABC', 'cancel:1:official', cancel_all_today=True,
+                              expected_extra_minutes=5, expected_bedtime='21:00')
+        self.assertEqual(self.backend.cancels, 1)
+
+    def test_cancel_external_bonus_refuses_changed_minutes_or_bedtime(self):
+        self.backend.extra = 5
+        self.connect()
+        for extra, bedtime in ((10, '21:00'), (5, '21:20')):
+            with self.assertRaisesRegex(nintendo.NintendoError, 'ha cambiado'):
+                self.connector.cancel('nintendo:ABC', 'cancel:1:stale', cancel_all_today=True,
+                                      expected_extra_minutes=extra, expected_bedtime=bedtime)
+        self.assertEqual(self.backend.cancels, 0)
+        self.assertIsNone(self.connector.operation_status('cancel:1:stale'))
+
+    def test_cancel_without_daily_limit_and_with_infinite_extra(self):
+        self.backend.device['limit_minutes'] = -1
+        self.backend.extra = -1
+        self.connect()
+        result = self.connector.cancel('nintendo:ABC', 'cancel:1:infinite', cancel_all_today=True,
+                                       expected_extra_minutes=-1, expected_bedtime='21:00')
+        self.assertEqual(result['status'], 'confirmed')
+        self.assertEqual(self.backend.extra, 0)
+
+    def test_cancel_all_marks_multiple_app_grants_removed(self):
+        self.connect()
+        self.grant('direct:1:first')
+        self.grant('direct:1:second')
+        self.connector.cancel('nintendo:ABC', 'cancel:1:both', cancel_all_today=True,
+                              expected_extra_minutes=40, expected_bedtime='21:00')
+        for operation in ('direct:1:first', 'direct:1:second'):
+            self.assertTrue(self.connector.operation_status(operation)['cancelled'])
+
+    def test_uncertain_cancel_is_never_resent(self):
+        self.backend.extra = 5
+        self.connect()
+        original = self.backend.cancel
+        async def timeout_after_write(device_id):
+            await original(device_id)
+            raise TimeoutError('unsafe-response')
+        self.backend.cancel = timeout_after_write
+        options = {'cancel_all_today': True, 'expected_extra_minutes': 5, 'expected_bedtime': '21:00'}
+        self.assertEqual(self.connector.cancel('nintendo:ABC', 'cancel:1:timeout', **options)['status'], 'pending')
+        self.connector.refresh_pending()
+        self.assertEqual(self.connector.cancel('nintendo:ABC', 'cancel:1:timeout', **options)['status'], 'pending')
+        self.assertEqual(self.backend.cancels, 1)
+
+    def test_cancel_all_rejects_invalid_confirmation_before_write(self):
+        self.backend.extra = 5
+        self.connect()
+        for option in ('true', 1, None):
+            with self.assertRaises(ValueError):
+                self.connector.cancel('nintendo:ABC', 'cancel:1:invalid', cancel_all_today=option)
+        for extra in (None, True, '5', -2, 0, float('nan')):
+            with self.assertRaises((ValueError, nintendo.NintendoError)):
+                self.connector.cancel('nintendo:ABC', 'cancel:1:invalid', cancel_all_today=True,
+                                      expected_extra_minutes=extra, expected_bedtime='21:00')
         self.assertEqual(self.backend.cancels, 0)
 
     def test_cancel_rechecks_remote_delta_even_if_button_was_visible(self):
@@ -575,7 +646,7 @@ class SDKAdapterTests(unittest.TestCase):
         with self.assertRaises(TimeoutError):
             asyncio.run(backend.snapshot())
 
-    def test_real_sdk_bedtime_only_payload_and_suspended_restrictions(self):
+    def test_real_sdk_bedtime_only_payload_and_hidden_alarms(self):
         try:
             from pynintendoparental.device import Device
         except ImportError:
@@ -616,10 +687,44 @@ class SDKAdapterTests(unittest.TestCase):
         self.assertEqual(snapshot['last_sync'], 1700000000)
         self.assertTrue(snapshot['can_grant'])
         backend.api.visibility = 'INVISIBLE'
-        suspended = asyncio.run(backend.snapshot())[0]
-        self.assertTrue(suspended['restrictions_suspended'])
-        self.assertFalse(suspended['can_grant'])
-        self.assertIsNone(suspended['remaining_minutes'])
+        hidden = asyncio.run(backend.snapshot())[0]
+        self.assertFalse(hidden['alarms_enabled'])
+        self.assertTrue(hidden['can_grant'])
+        self.assertIsNotNone(hidden['remaining_minutes'])
+
+    def test_snapshot_zero_limit_five_official_minutes_with_hidden_or_missing_alarm(self):
+        class Api:
+            visibility = 'INVISIBLE'
+            async def async_get_account_devices(self):
+                return {'json': {'ownedDevices': [{'deviceId': 'ABC', 'label': 'Switch #1'}]}}
+            async def async_get_device_parental_control_setting(self, device_id):
+                device = {'extraPlayingTime': {'inOneDay': {'duration': 5}}}
+                if self.visibility is not None:
+                    device['alarmSetting'] = {'visibility': self.visibility}
+                return {'json': {'parentalControlSetting': {'playTimerRegulations': {}},
+                                 'ownedDevice': {'device': device}}}
+        class Device:
+            device_id, name, model = 'ABC', 'Switch #1', 'Switch'
+            forced_termination_mode = True
+            extra = {}
+            daily_summaries = []
+            @classmethod
+            def from_device_response(cls, raw, api): return cls()
+            async def update(self, now): pass
+            def _parse_parental_control_setting(self, pcs, now): pass
+            def _get_today_regulation(self, now):
+                return {'timeToPlayInOneDay': {'enabled': True, 'limitTime': 0},
+                        'bedtime': {'enabled': True, 'endingTime': {'hour': 20, 'minute': 0}}}
+        backend = nintendo._NintendoBackend()
+        backend.api, backend._Device = Api(), Device
+        for visibility, expected in (('INVISIBLE', False), ('VISIBLE', True), (None, None), ('UNKNOWN', None)):
+            backend.api.visibility = visibility
+            snapshot = asyncio.run(backend.snapshot())[0]
+            self.assertEqual(snapshot['limit_minutes'], 0)
+            self.assertEqual(snapshot['extra_minutes'], 5)
+            self.assertEqual(snapshot['alarms_enabled'], expected)
+            self.assertTrue(snapshot['can_grant'])
+            self.assertIsNotNone(snapshot['remaining_minutes'])
 
 
 if __name__ == '__main__':

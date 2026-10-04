@@ -216,9 +216,13 @@ class _NintendoBackend:
                 bedtime_remaining = max(0, int((end - now).total_seconds() / 60))
                 remaining = bedtime_remaining if remaining is None else min(remaining, bedtime_remaining)
             alarm = owned_device.get('alarmSetting', device.extra.get('alarmSetting', {}))
-            suspended = alarm.get('visibility') != 'VISIBLE'
-            if suspended:
-                remaining = None
+            visibility = alarm.get('visibility') if isinstance(alarm, dict) else None
+            alarms_enabled = {'VISIBLE': True, 'INVISIBLE': False}.get(visibility)
+            # Alarm visibility is informational. The official app can manage
+            # today's extra time even when alarms are hidden or unavailable.
+            # Do not turn that state into a local rejection of a cloud write.
+            grant_reason = ('No hay un límite diario activo; no se puede ampliar un presupuesto sin límite.' if limit < 0
+                            else 'El tiempo extra de hoy ya es ilimitado en Nintendo.' if extra < 0 else '')
             bedtime_start = _api_time(bedtime_setting['startingTime']) if bedtime_setting.get('enabled') and bedtime_setting.get('startingTime') else None
             sync = pcs.get('ownedDevice', {}).get('parentalControlSettingState', {}).get('synchronizationStatus')
             result.append({
@@ -230,10 +234,11 @@ class _NintendoBackend:
                 'bedtime_start': bedtime_start, 'bedtime_extra_minutes': bedtime_extra,
                 'daily_extra_minutes': daily_extra, 'bedtime_remaining_minutes': bedtime_remaining,
                 'forced_termination': bool(device.forced_termination_mode),
-                'restrictions_suspended': suspended,
+                'alarms_enabled': alarms_enabled,
+                'grant_unavailable_reason': grant_reason,
                 'last_sync': _timestamp(owned_device.get('synchronizedParentalControlSetting', {}).get('synchronizedAt')),
                 'console_sync_pending': sync != 'SYNCHRONIZED', 'available': True,
-                'can_grant': limit >= 0 and extra >= 0 and not suspended and bool(device.forced_termination_mode),
+                'can_grant': limit >= 0 and extra >= 0,
             })
         return result
 
@@ -474,7 +479,7 @@ class Connector:
             pending = self._pending(device['key'])
             device['pending_operation'] = self._result(pending[0]) if pending else None
             device['can_grant'] = bool(device.get('can_grant')) and not pending
-            device['can_cancel'] = self._cancel_source(device) is not None and not pending
+            device['can_cancel'] = self._has_extra(device) and not pending
             latest = self._db.execute('''SELECT * FROM operations WHERE device_key=?
                 AND account_hash=? AND day=? ORDER BY created_at DESC LIMIT 1''',
                 (device['key'], self._account(), self._today())).fetchone()
@@ -496,7 +501,7 @@ class Connector:
                     device.update(available=False, can_grant=False, can_cancel=False)
             return {'configured': True, 'devices': self._decorate(visible), 'error': self._last_error, 'updated_at': self._updated}
 
-    def _validate(self, device_key, minutes, *, allow_pending=False):
+    def _validate(self, device_key, minutes, *, allow_pending=False, for_cancel=False):
         if type(minutes) is not int or minutes not in MINUTES:
             raise ValueError('Nintendo admite permisos de 5 a 30 minutos, en pasos de 5.')
         if not isinstance(device_key, str) or not device_key.startswith('nintendo:'):
@@ -508,8 +513,8 @@ class Connector:
         device = next((item for item in devices if item['key'] == device_key), None)
         if device is None:
             raise ValueError('Esta consola no está vinculada a la cuenta Nintendo conectada.')
-        if not device.get('can_grant') or device['limit_minutes'] < 0 or device['extra_minutes'] is None or device['extra_minutes'] < 0:
-            raise NintendoError('La consola no tiene un límite diario activo compatible con tiempo extra.')
+        if not for_cancel and (device['limit_minutes'] < 0 or device['extra_minutes'] is None or device['extra_minutes'] < 0):
+            raise NintendoError(device.get('grant_unavailable_reason') or 'La consola no tiene un límite diario activo compatible con tiempo extra.')
         if not allow_pending and self._pending(device_key):
             raise NintendoError('Hay una concesión pendiente en esta consola. No se añadirá más tiempo hasta resolverla.')
         return device
@@ -519,8 +524,6 @@ class Connector:
             return self._decorate([self._validate(device_key, minutes)])[0]
 
     def _preflight(self, device, minutes, extend_bedtime):
-        if not device.get('forced_termination') or device.get('restrictions_suspended'):
-            raise NintendoError('Nintendo no está suspendiendo el juego con sus restricciones actuales. Activa la suspensión del programa y sus controles antes de conceder tiempo.')
         if device['limit_minutes'] + device['extra_minutes'] + minutes - device['used_minutes'] <= 0:
             raise NintendoError('El tiempo solicitado no alcanza para superar el uso ya registrado. Elige una duración mayor dentro de tu límite de aprobación.')
         if not extend_bedtime and device.get('bedtime'):
@@ -581,16 +584,18 @@ class Connector:
                 current_base = device.get('base_bedtime', device.get('bedtime'))
                 if ((baseline_limit is not None and device['limit_minutes'] != baseline_limit)
                         or (row['base_bedtime'] != current_base)
-                        or device.get('restrictions_suspended')
-                        or not device.get('forced_termination')):
+                        or (row['baseline_forced'] is not None and bool(device.get('forced_termination')) != bool(row['baseline_forced']))):
                     self._finish(row['operation_id'], 'failed', 'La configuración actual de Nintendo entra en conflicto con el permiso. No se reenviará la operación ni se modificarán las restricciones permanentes.')
                     continue
             bedtime = device.get('effective_bedtime', device.get('bedtime'))
             if row['ack'] and extra == row['expected'] and bedtime == row['expected_bedtime']:
                 message = 'Tiempo extra confirmado en Nintendo.' if row['kind'] == 'grant' else 'Tiempo extra cancelado en Nintendo.'
                 self._finish(row['operation_id'], 'confirmed', message)
-                if row['kind'] == 'cancel' and row['source_operation']:
-                    self._db.execute('UPDATE operations SET cancelled=1 WHERE operation_id=?', (row['source_operation'],))
+                if row['kind'] == 'cancel':
+                    self._db.execute('''UPDATE operations SET cancelled=1 WHERE
+                        device_key=? AND account_hash=? AND day=? AND kind='grant'
+                        AND status='confirmed' AND created_at<=?''',
+                        (row['device_key'], row['account_hash'], row['day'], row['created_at']))
                     self._db.commit()
 
     def refresh_pending(self):
@@ -658,7 +663,6 @@ class Connector:
         fresh = next((item for item in self._read() if item['key'] == device['key']), None)
         keys = ('extra_minutes', 'limit_minutes', 'forced_termination')
         if (not fresh or any(fresh.get(key) != device.get(key) for key in keys)
-                or fresh.get('restrictions_suspended')
                 or fresh.get('base_bedtime', fresh.get('bedtime')) != row['base_bedtime']
                 or fresh.get('effective_bedtime', fresh.get('bedtime')) != from_time):
             return self._finish(operation_id, 'failed', 'Las restricciones han cambiado durante la aprobación. No se ha confirmado la ampliación del descanso.')
@@ -728,6 +732,11 @@ class Connector:
             self._insert(operation_id, device, minutes, 'grant', extend_bedtime=extend_bedtime)
             return self._mutate(operation_id, device, minutes, 'grant')
 
+    @staticmethod
+    def _has_extra(device):
+        extra = device.get('extra_minutes')
+        return device.get('available') is True and extra is not None and (extra > 0 or extra == -1)
+
     def _cancel_source(self, device):
         if not device.get('available') or device.get('extra_minutes') is None or device.get('extra_minutes', 0) <= 0:
             return None
@@ -737,16 +746,29 @@ class Connector:
             ORDER BY created_at DESC LIMIT 1''',
             (device['key'], self._account(), self._today(), device['extra_minutes'])).fetchone()
 
-    def cancel(self, device_key, operation_id):
+    def cancel(self, device_key, operation_id, *, cancel_all_today=False, expected_extra_minutes=None, expected_bedtime=None):
         with self._lock:
+            if type(cancel_all_today) is not bool:
+                raise ValueError('La confirmación de retirar todo el tiempo debe ser verdadera o falsa.')
+            if cancel_all_today:
+                _number(expected_extra_minutes, minimum=-1)
+                if expected_extra_minutes != -1 and expected_extra_minutes <= 0:
+                    raise ValueError('No hay tiempo extra que retirar.')
+                if expected_bedtime is not None:
+                    _time_minutes(expected_bedtime)
             prior = self._existing(operation_id, device_key, 0, 'cancel')
             if prior:
                 return prior
-            device = self._validate(device_key, 5)
+            device = self._validate(device_key, 5, for_cancel=True)
+            if not self._has_extra(device):
+                raise NintendoError('Nintendo no tiene tiempo extra para retirar hoy.')
             source = self._cancel_source(device)
-            if source is None:
-                raise NintendoError('No se puede cancelar de forma segura: Nintendo elimina todo el tiempo extra del día y puede incluir permisos externos.')
-            self._insert(operation_id, device, 0, 'cancel', source['operation_id'])
+            if cancel_all_today:
+                if device['extra_minutes'] != expected_extra_minutes or device.get('effective_bedtime', device.get('bedtime')) != expected_bedtime:
+                    raise NintendoError('El tiempo extra o el horario ha cambiado en Nintendo. Actualiza los datos y confirma de nuevo qué quieres retirar.')
+            elif source is None:
+                raise NintendoError('Nintendo retira todo el tiempo extra del día, incluido el concedido desde la app oficial. Confirma expresamente que quieres retirarlo todo.')
+            self._insert(operation_id, device, 0, 'cancel', source['operation_id'] if source else None)
             return self._mutate(operation_id, device, 0, 'cancel')
 
     def disconnect(self):
