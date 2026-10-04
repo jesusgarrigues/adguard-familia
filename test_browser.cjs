@@ -16,7 +16,7 @@ const state={clients,base_clients:Object.fromEntries(clients.map(c=>[c.name,c]))
 const native={configured:true,devices:[{id:'ABC',key:'nintendo:ABC',name:'Switch de Martín',model:'Switch',used_minutes:0,remaining_minutes:5,limit_minutes:0,extra_minutes:5,bedtime:'20:00',forced_termination:true,alarms_enabled:false,last_sync:Date.now()/1000,console_sync_pending:false,available:true,can_grant:true,can_cancel:true,pending_operation:null,daily_extra_minutes:5,budget_remaining_minutes:5,bedtime_remaining_minutes:600,base_bedtime:'20:00',bedtime_start:'06:00',native_policy:{timerMode:'DAILY',restrictionMode:'FORCED_TERMINATION',dailyRegulations:{timeToPlayInOneDay:{enabled:true,limitTime:0},bedtime:{enabled:true,endingTime:{hour:20,minute:0},startingTime:{hour:6,minute:0}}},eachDayOfTheWeekRegulations:{}},policy_revision:'fixture-revision'}]};
 const requests=[{id:1,user_id:2,username:'martin',client:'nintendo:ABC',service:'@nintendo',minutes:20,reason:'Jugar con mis amigos',status:'pending',created:Date.now()/1000,extend_bedtime:true,approved_extend_bedtime:null}];
 const user={id:1,username:'admin',role:'admin',clients:[],edit_policy:true,max_minutes:1440};
-const calls=[];let adguardDown=false;
+const calls=[];let adguardDown=false,clientFailure=null,readFailures=0,saveDelay=0;
 (async()=>{
  const browser=await chromium.launch({executablePath:process.env.CHROMIUM_EXECUTABLE||['/usr/bin/chromium','/usr/bin/google-chrome','/opt/google/chrome/chrome'].find(fs.existsSync),headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--disable-breakpad','--disable-crash-reporter']});
  try{
@@ -27,6 +27,15 @@ const calls=[];let adguardDown=false;
    if(url.pathname==='/api/state'&&adguardDown)return route.fulfill({status:502,contentType:'application/json',body:JSON.stringify({error:'AdGuard unavailable fixture'})});
    const path=url.pathname.slice(5);let body=null;
    if(req.method()==='POST'){body=req.postDataJSON();calls.push({path,body});}
+   if(path==='state'&&readFailures>0){readFailures--;return route.fulfill({status:502,contentType:'application/json',body:JSON.stringify({error:'No se pudo actualizar el estado de AdGuard.'})});}
+   if(path==='client'&&body){
+    if(saveDelay)await new Promise(resolve=>setTimeout(resolve,saveDelay));
+    if(clientFailure)return route.fulfill({status:clientFailure.status,contentType:'application/json',body:JSON.stringify({error:clientFailure.message})});
+    const original=state.base_clients[body.client];Object.assign(original,body.patch);
+    state.base_clients[original.name]=original;if(original.name!==body.client)delete state.base_clients[body.client];
+    state.base_effective[original.name]={...effective,blocked_services:original.use_global_blocked_services?ids:original.blocked_services};
+   }
+   if(path==='client/icon'&&body){const device=body.client.startsWith('nintendo:')?native.devices.find(d=>d.key===body.client):state.clients.find(c=>c.name===body.client);device.ui_icon=body.icon==='auto'?null:body.icon;}
    if(path==='nintendo/operation/close'&&body){
     const previous=native.devices[0].pending_operation;
     native.devices[0].pending_operation=null;native.devices[0].can_grant=true;
@@ -37,10 +46,16 @@ const calls=[];let adguardDown=false;
    return route.fulfill({contentType:'application/json',body:JSON.stringify(data)});
   }
   if(url.pathname==='/')return route.fulfill({contentType:'text/html',body:fs.readFileSync(root+'/index.html','utf8')});
+  if(url.pathname.startsWith('/assets/')){
+   const file=root+url.pathname;if(fs.existsSync(file))return route.fulfill({contentType:file.endsWith('.css')?'text/css':file.endsWith('.js')?'application/javascript':file.endsWith('.woff2')?'font/woff2':'image/svg+xml',body:fs.readFileSync(file)});
+  }
   return route.fulfill({status:404,body:'not found'});
  });
  const page=await context.newPage();page.setDefaultTimeout(10000);const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto('http://preview.local/');await page.locator('[data-client-card]').first().waitFor();
+ await page.evaluate(()=>document.fonts.ready);
+ assert.ok(await page.evaluate(()=>document.fonts.check('16px Inter')));
+ assert.equal(await page.evaluate(()=>getComputedStyle(document.documentElement).colorScheme),'light');
  assert.equal(await page.locator('[data-client-card]').count(),10);
  assert.equal(await page.locator('[data-client-card] .service-detail').count(),0);
  const sanitizer=await page.evaluate(()=>{const source='<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" onload="window.bad=1"><script>window.bad=1</script><foreignObject><div>evil</div></foreignObject><path d="M0 0h2v2z" fill="url(https://evil.test/a)" style="fill:red" onclick="window.bad=2" xlink:href="https://evil.test/a"/><image href="https://evil.test/a"/></svg>';const svg=safeServiceSvg(source);return {markup:svg?.outerHTML,bad:window.bad||null,base64:!!safeServiceSvg(btoa('<svg><path d="M0 0h1v1z"/></svg>'))}});
@@ -74,8 +89,58 @@ const calls=[];let adguardDown=false;
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
  await page.screenshot({path:shots+'/movil-todos.png'});
  await page.getByRole('button',{name:'⚙ Ajustes',exact:true}).click();
+ assert.equal(await page.locator('#c-service-picker').isVisible(),false);
+ assert.equal(await page.locator('#c-service-schedule').isVisible(),false);
+ await page.locator('#c-global-services').uncheck();
+ assert.equal(await page.locator('#c-service-picker').isVisible(),true);
+ assert.equal(await page.locator('input[data-picker="client"]:checked').count(),0);
+ await page.locator('#c-service-picker .service-search').fill('YouTube');
+ await page.locator('input[data-picker="client"][data-service="youtube"]').check();
+ await page.locator('#c-global-services').check();
+ assert.equal(await page.locator('#c-service-picker').isVisible(),false);
+ await page.locator('#c-global-services').uncheck();
+ assert.equal(await page.locator('input[data-picker="client"][data-service="youtube"]').isChecked(),true);
+ for(const width of [320,375,390,430]){
+  await page.setViewportSize({width,height:844});
+  const bounds=await page.locator('.adguard-modal').evaluate(m=>({scroll:m.scrollWidth,client:m.clientWidth}));
+  assert.ok(bounds.scroll<=bounds.client+1,`Settings overflow at ${width}: ${JSON.stringify(bounds)}`);
+  const controls=await page.locator('#adguard-dialog-content').evaluate(root=>[...root.querySelectorAll('input,textarea,select,button')].filter(n=>n.getClientRects().length).every(n=>{const r=n.getBoundingClientRect();return r.left>=-1&&r.right<=innerWidth+1}));
+  assert.ok(controls,`Settings controls outside viewport at ${width}`);
+ }
+ await page.setViewportSize({width:390,height:844});
  await page.screenshot({path:shots+'/movil-ajustes.png'});
+ // Local validation must be visible in the modal and never issue a write.
+ const clientWrites=()=>calls.filter(c=>c.path==='client').length;
+ let writes=clientWrites();await page.locator('#c-name').fill('');await page.locator('#c-save').click();
+ assert.ok(await page.locator('#c-feedback').isVisible());assert.ok((await page.locator('#c-feedback').innerText()).includes('nombre'));assert.equal(clientWrites(),writes);
+ await page.locator('#c-name').fill('iMac de Emma');
+ await page.locator('#c-schedule-mon').check();await page.locator('#c-schedule-monstart').fill('bad');await page.locator('#c-save').click();
+ assert.ok((await page.locator('#c-feedback').innerText()).includes('Lunes'));assert.equal(clientWrites(),writes);await page.locator('#c-schedule-mon').uncheck();
+ for(const status of [400,401,403,502]){
+  clientFailure={status,message:`Error de guardado ${status}: no se pudo completar el cambio.`};
+  await page.locator('#c-save').click();await page.waitForFunction(()=>!busy);
+  assert.ok(await page.locator('#c-feedback').isVisible());assert.ok((await page.locator('#c-feedback').innerText()).includes(String(status)));
+  assert.equal(await page.locator('#c-global-services').isChecked(),false);assert.equal(await page.locator('input[data-picker="client"][data-service="youtube"]').isChecked(),true);
+ }
+ clientFailure=null;saveDelay=250;readFailures=1;writes=clientWrites();
+ await page.locator('#c-save').click();assert.equal(await page.locator('#c-save').isDisabled(),true);
+ await page.waitForFunction(()=>!busy);assert.equal(clientWrites(),writes+1);
+ assert.ok((await page.locator('#c-feedback').innerText()).includes('aceptado'));assert.equal(await page.locator('#c-save').innerText(),'Comprobar guardado');
+ saveDelay=0;await page.locator('#c-save').click();await page.waitForFunction(()=>!busy);
+ assert.equal(clientWrites(),writes+1);assert.equal(await page.locator('#adguard-dialog-backdrop').count(),0);
+ const saved=calls.filter(c=>c.path==='client').at(-1).body.patch;
+ assert.deepEqual(saved.blocked_services,['youtube']);assert.equal(saved.use_global_blocked_services,false);assert.equal(saved.use_global_settings,true);
+ await page.locator('[data-client-card="iMac de Emma"]').click();await page.getByRole('button',{name:'⚙ Ajustes',exact:true}).click();
+ assert.equal(await page.locator('#c-global-services').isChecked(),false);assert.equal(await page.locator('input[data-picker="client"][data-service="youtube"]').isChecked(),true);
  await page.locator('#adguard-dialog-backdrop').getByRole('button',{name:'Cerrar',exact:true}).click();
+ // Device icons use the same saved selection after closing and reopening.
+ await page.locator('[data-client-card="iMac de Emma"]').click();await page.locator('#adguard-dialog-backdrop').getByRole('button',{name:'Cambiar icono',exact:true}).click();
+ assert.equal(await page.locator('#icon-selector .icon-choice').count(),13);
+ await page.locator('#icon-selector [data-icon="tv"]').click();await page.getByRole('button',{name:'Guardar icono',exact:true}).click();
+ await page.locator('#icon-selector').waitFor({state:'detached'});
+ assert.ok(await page.locator('[data-client-card="iMac de Emma"] img[src="/assets/icons/tv.svg"]').isVisible());
+ await page.locator('#adguard-dialog-backdrop').getByRole('button',{name:'Cambiar icono',exact:true}).click();assert.equal(await page.locator('#icon-selector [data-icon="tv"]').getAttribute('aria-pressed'),'true');
+ await page.locator('#icon-selector').getByRole('button',{name:'Cancelar',exact:true}).click();await page.locator('#adguard-dialog-backdrop').getByRole('button',{name:'Cerrar',exact:true}).click();
  await page.locator('[data-console="nintendo:ABC"]').click();
  assert.ok(await page.getByRole('button',{name:'Añadir tiempo extra',exact:true}).isEnabled());
  assert.ok(await page.getByRole('button',{name:'Retirar ampliación de hoy',exact:true}).isVisible());
@@ -156,6 +221,6 @@ const calls=[];let adguardDown=false;
  await page.locator('#review-bedtime-1').waitFor();assert.equal(await page.locator('#review-bedtime-1').isChecked(),false);
  adguardDown=true;await page.evaluate(()=>{state=null;dirty=false;go('clients');return refresh(true)});assert.ok(await page.locator('[data-console="nintendo:ABC"]').isVisible());
  assert.deepEqual(errors,[]);
- console.log(JSON.stringify({passed:true,screenshots:shots,sanitizer,calls},null,2));
+ console.log(JSON.stringify({passed:true,screenshots:shots,clientSettings:'mobile widths, own/global services, validation, API errors, read-only confirmation and saved device icons',sanitizer,calls},null,2));
  }finally{await browser.close()}
 })().catch(e=>{console.error(e.stack);process.exitCode=1});

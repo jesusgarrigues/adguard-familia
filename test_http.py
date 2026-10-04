@@ -62,6 +62,19 @@ try:
     observer=Client();observer.call('auth/login',{'username':'observer','password':'observer-password-1234'})
     observer.call('cancel',{'client':'iMac de Emma','service':'youtube'},403)
     parent.call('client',{'client':'iMac de Emma','patch':{'parental_enabled':False}},403)
+    admin.call('client',{'client':'iMac de Martín','patch':{'use_global_blocked_services':False,'blocked_services':['youtube'],'blocked_services_schedule':{'time_zone':'Local'}}})
+    persisted=admin.call('state')
+    assert persisted['base_clients']['iMac de Martín']['blocked_services']==['youtube']
+    assert not persisted['base_clients']['iMac de Martín']['use_global_blocked_services']
+    assert persisted['effective']['iMac de Martín']['blocked_services']==['youtube']
+    admin.call('client',{'client':'iMac de Martín','patch':{'blocked_services':['unknown-service']}},400)
+    child.call('client/icon',{'client':'iMac de Emma','icon':'tv'},403)
+    observer.call('client/icon',{'client':'iMac de Emma','icon':'tv'},403)
+    parent.call('client/icon',{'client':'iMac de Martín','icon':'tv'},403)
+    parent.call('client/icon',{'client':'iMac de Emma','icon':'tv'})
+    assert child.call('state')['clients'][0]['ui_icon']=='tv'
+    parent.call('client/icon',{'client':'iMac de Emma','icon':'auto'})
+    assert child.call('state')['clients'][0]['ui_icon'] is None
     child.call('nintendo/login/begin',{},403)
     login=admin.call('nintendo/login/begin',{})
     connected=admin.call('nintendo/login/complete',{'state_id':login['state_id'],'response_url':'npf54789bef://auth#state=oauth-state&session_token_code=private-test-code','timezone':'Europe/Madrid'})
@@ -111,7 +124,7 @@ try:
     assert recovered['extra_minutes']==75 and recovered['pending_operation'] is None
     assert recovered['last_read_at']>0
     assert observer.call('nintendo/state')['devices']==[]
-    for path in ('manifest.webmanifest','sw.js','icon-192.png','icon-512.png'):
+    for path in ('manifest.webmanifest','sw.js','icon-192.png','icon-512.png','assets/app.css','assets/client-settings.js','assets/fonts/InterVariable.woff2','assets/icons/tv.svg'):
         with urllib.request.urlopen('http://127.0.0.1:8080/'+path) as response:assert response.status==200
     child.call('auth/logout',{});child.call('me',expected=401)
     print('HTTP smoke passed: scoped roles, mandatory approval, durable 40-minute composition, optional Nintendo bedtime, policy permissions, session logout and PWA assets')

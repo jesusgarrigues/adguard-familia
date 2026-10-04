@@ -36,4 +36,11 @@ class DiagnosticTests(unittest.TestCase):
         handler.wfile.write.side_effect=BrokenPipeError()
         handler.respond(502,{'error':'timeout'})
 
+    def test_validation_response_is_explained_without_credentials(self):
+        error=urllib.error.HTTPError('http://example/control/clients/update',400,'Bad Request',{},io.BytesIO(b'{"message":"Invalid schedule private-password"}'))
+        result=app.network_error('clients/update',error,{'password':'private-password'})
+        self.assertIn('Invalid schedule',str(result))
+        self.assertNotIn('private-password',str(result))
+        self.assertEqual(result.detail['http_status'],400)
+
 if __name__=='__main__':unittest.main()
