@@ -72,9 +72,23 @@ try:
     assert approved['status']=='approved' and not approved['approved_extend_bedtime']
     state=child.call('nintendo/state?refresh=1')
     assert state['devices'][0]['extra_minutes']==20
+    child.call('nintendo/policy',{'client':'nintendo:ABC','patch':{},'revision':'rev','operation_id':secrets.token_hex(16)},403)
+    parent.call('nintendo/policy',{'client':'nintendo:ABC','patch':{},'revision':'rev','operation_id':secrets.token_hex(16)},403)
+    forty_id=child.call('request',{'client':'nintendo:ABC','service':'@nintendo','minutes':40})['id']
+    partial=parent.call('request/review',{'id':forty_id,'decision':'approve','minutes':40})
+    assert partial['status']=='pending' and partial['confirmed_minutes']==30
+    for _ in range(120):
+        progress=child.call('nintendo/state?refresh=1')['devices'][0]['last_operation']
+        if progress['status']=='confirmed':break
+        time.sleep(.25)
+    else:raise AssertionError('Composed 40-minute approval never finished')
+    assert progress['confirmed_minutes']==40
+    approved=next(r for r in child.call('requests')['requests'] if r['id']==forty_id)
+    assert approved['status']=='approved' and approved['approved_minutes']==40
+    assert child.call('nintendo/state')['devices'][0]['extra_minutes']==60
     assert observer.call('nintendo/state')['devices']==[]
     for path in ('manifest.webmanifest','sw.js','icon-192.png','icon-512.png'):
         with urllib.request.urlopen('http://127.0.0.1:8080/'+path) as response:assert response.status==200
     child.call('auth/logout',{});child.call('me',expected=401)
-    print('HTTP smoke passed: scoped roles, mandatory approval, optional Nintendo bedtime approval, session logout and PWA assets')
+    print('HTTP smoke passed: scoped roles, mandatory approval, durable 40-minute composition, optional Nintendo bedtime, policy permissions, session logout and PWA assets')
 finally:process.terminate();process.wait(timeout=5)

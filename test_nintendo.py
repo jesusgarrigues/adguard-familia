@@ -26,6 +26,7 @@ class FakeBackend:
         self.restore_error = None
         self.available = True
         self.complete_on = None
+        self.policy_writes = 0
         self.device = {
             'id': 'ABC', 'key': 'nintendo:ABC', 'name': 'Switch de Martín', 'model': 'Switch',
             'used_minutes': 60, 'remaining_minutes': 0, 'limit_minutes': 60,
@@ -36,6 +37,11 @@ class FakeBackend:
             'daily_extra_minutes': 0, 'bedtime_extra_minutes': 0,
             'restrictions_suspended': False,
         }
+        reg = {'timeToPlayInOneDay': {'enabled': True, 'limitTime': 60},
+               'bedtime': {'enabled': True, 'endingTime': {'hour':21,'minute':0}, 'startingTime':{'hour':6,'minute':0}}}
+        self.device['native_policy'] = {'timerMode':'DAILY','restrictionMode':'FORCED_TERMINATION',
+            'dailyRegulations':copy.deepcopy(reg),'eachDayOfTheWeekRegulations':{d:copy.deepcopy(reg) for d in ('monday','tuesday','wednesday','thursday','friday','saturday','sunday')}}
+        self.device['policy_revision'] = nintendo._policy_revision(self.device['native_policy'])
 
     async def begin_login(self):
         self.begin_on = asyncio.get_running_loop()
@@ -100,6 +106,14 @@ class FakeBackend:
         self.extra = 0
         self.device['bedtime'] = self.device['effective_bedtime'] = self.device['base_bedtime']
         return {'json': {'status': 'TO_CANCELED'}}
+
+    async def policy(self, device_id, regulations):
+        self.policy_writes += 1
+        if self.mode != 'delayed':
+            self.device['native_policy'] = copy.deepcopy(regulations)
+            self.device['policy_revision'] = nintendo._policy_revision(regulations)
+        if self.mode == 'timeout': raise TimeoutError('unsafe-policy-token')
+        return {'json': {}}
 
     async def close(self):
         self.closed += 1
@@ -213,7 +227,7 @@ class ConnectorTests(unittest.TestCase):
         result = self.grant(extend_bedtime=True)
         self.assertEqual(result['status'], 'confirmed')
         self.assertTrue(result['extend_bedtime'])
-        self.assertEqual(result['stage'], 'confirm_sent')
+        self.assertEqual(result['stage'], 'complete')
         self.assertEqual(self.backend.confirms, 1)
         self.assertEqual(self.backend.extra, 20)
         self.assertEqual(self.backend.device['bedtime'], '21:20')
@@ -290,7 +304,7 @@ class ConnectorTests(unittest.TestCase):
         self.backend.confirm_to = '22:10'
         async def confirm(device_id, minutes):
             self.backend.confirms += 1
-            self.backend.extra = 70  # SDK exposes max(daily bonus, bedtime shift).
+            self.backend.extra = 20  # Clock shifted 70 minutes, daily budget only 20.
             self.backend.device['bedtime'] = self.backend.device['effective_bedtime'] = '22:10'
             return {'json': {'status': 'TO_ADDED'}}
         self.backend.confirm = confirm
@@ -434,7 +448,7 @@ class ConnectorTests(unittest.TestCase):
 
     def test_invalid_scope_duration_and_unlimited_never_mutate(self):
         self.connect()
-        for minutes in (0, -1, 4, 31, 60, 10.0, True, '20'):
+        for minutes in (0, -1, 4, 31, 120, 10.0, True, '20'):
             with self.assertRaises(ValueError):
                 self.connector.validate('nintendo:ABC', minutes)
         with self.assertRaises(ValueError):
@@ -604,6 +618,173 @@ class ConnectorTests(unittest.TestCase):
         self.backend.grant = inspect
         self.assertEqual(self.grant()['status'], 'confirmed')
 
+    def test_sixty_is_one_native_grant_and_consumed_bonus_can_be_extended_again(self):
+        self.connect()
+        self.assertEqual(self.grant(minutes=60)['confirmed_minutes'], 60)
+        self.backend.device['used_minutes'] = 120
+        self.assertEqual(self.grant('direct:1:again', minutes=60)['status'], 'confirmed')
+        self.assertEqual(self.backend.extra, 120)
+        self.assertEqual(self.backend.grants, 2)
+
+    def test_forty_is_one_approval_three_verified_steps_without_rounding_up(self):
+        self.connect()
+        result = self.grant(minutes=40)
+        self.assertEqual((result['status'], result['confirmed_minutes'], result['steps_total']), ('pending', 30, 3))
+        self.assertEqual(self.backend.grants, 1)
+        self.connector.devices(force=True)  # browser GET never sends a step
+        self.assertEqual(self.backend.grants, 1)
+        self.connector.refresh_pending()
+        self.assertEqual(self.connector.operation_status('direct:1:example')['confirmed_minutes'], 35)
+        self.connector.refresh_pending()
+        result = self.connector.operation_status('direct:1:example')
+        self.assertEqual((result['status'], result['confirmed_minutes']), ('confirmed', 40))
+        self.assertEqual(self.backend.extra, 40)
+        self.assertEqual(self.backend.grants, 3)
+        self.grant(minutes=40)
+        self.assertEqual(self.backend.grants, 3)
+
+    def test_forty_plan_survives_restart_and_resumes_only_unsent_steps(self):
+        self.connect()
+        self.grant(minutes=40)
+        self.connector.close(); self.connector = self.make_connector()
+        self.connector.refresh_pending(); self.connector.refresh_pending()
+        self.assertEqual(self.backend.grants, 3)
+        self.assertEqual(self.connector.operation_status('direct:1:example')['status'], 'confirmed')
+
+    def test_uncertain_second_step_blocks_further_steps_even_after_restart(self):
+        self.connect(); self.grant(minutes=40)
+        self.backend.mode = 'timeout'
+        self.connector.refresh_pending()
+        self.assertEqual(self.backend.extra, 35)
+        self.assertEqual(self.backend.grants, 2)
+        self.connector.close(); self.connector = self.make_connector()
+        for _ in range(3): self.connector.refresh_pending()
+        result = self.connector.operation_status('direct:1:example')
+        self.assertEqual((result['status'], result['confirmed_minutes']), ('pending', 30))
+        self.assertEqual(self.backend.grants, 2)
+
+    def test_delayed_step_must_be_read_back_before_next_step(self):
+        self.connect(); self.backend.mode = 'delayed'
+        self.grant(minutes=40)
+        self.connector.refresh_pending()
+        self.assertEqual(self.backend.grants, 1)
+        self.backend.extra = 30; self.backend.mode = 'success'
+        self.connector.refresh_pending()
+        self.assertEqual(self.backend.grants, 2)
+        self.assertEqual(self.backend.extra, 35)
+
+    def test_changed_budget_between_steps_stops_with_partial_progress(self):
+        self.connect(); self.grant(minutes=40)
+        self.backend.extra = 45
+        self.connector.refresh_pending()
+        result = self.connector.operation_status('direct:1:example')
+        self.assertEqual((result['status'], result['confirmed_minutes']), ('failed', 30))
+        self.assertEqual(self.backend.grants, 1)
+        self.assertEqual(self.backend.extra, 45)
+
+    def test_native_expiry_prevents_continuing_a_plan(self):
+        self.backend.device['extra_expires_at'] = self.now + 10
+        self.connect(); self.grant(minutes=40)
+        self.now += 11; self.connector.refresh_pending()
+        self.assertEqual(self.backend.grants, 1)
+        self.assertEqual(self.connector.operation_status('direct:1:example')['status'], 'failed')
+
+    def test_clock_shift_alone_never_confirms_an_added_daily_budget(self):
+        self.connect(); self.backend.mode = 'delayed'
+        self.grant()
+        self.backend.device['bedtime_extra_minutes'] = 20
+        self.connector.refresh_pending()
+        self.assertEqual(self.connector.operation_status('direct:1:example')['status'], 'pending')
+
+    def test_cancel_bedtime_only_permission_without_fabricating_daily_minutes(self):
+        self.backend.device.update(has_extra=True, bedtime_extra_minutes=30, effective_bedtime='21:30', bedtime='21:30')
+        self.connect()
+        self.assertTrue(self.connector.devices()['devices'][0]['can_cancel'])
+        result = self.connector.cancel('nintendo:ABC','cancel:1:night',cancel_all_today=True,
+                                       expected_extra_minutes=0,expected_bedtime='21:30')
+        self.assertEqual(result['status'],'confirmed')
+
+    def test_existing_pending_legacy_operation_is_not_reissued_after_upgrade(self):
+        self.connect(); self.backend.mode = 'delayed'; self.grant()
+        self.connector._db.execute("UPDATE operations SET model_version=1 WHERE operation_id='direct:1:example'");self.connector._db.commit()
+        self.connector.close(); self.connector = self.make_connector()
+        self.backend.extra = 20; self.connector.refresh_pending()
+        self.assertEqual(self.connector.operation_status('direct:1:example')['status'], 'confirmed')
+        self.assertEqual(self.backend.grants, 1)
+
+    def policy_patch(self, mode='DAILY'):
+        return {'timer_mode':mode,'forced_termination':True,
+                'daily':{'limit_minutes':0,'bedtime':'20:00','morning':'06:00'},
+                'week':{d:{'limit_minutes':i*15,'bedtime':'21:00','morning':'07:00'} for i,d in enumerate(('monday','tuesday','wednesday','thursday','friday','saturday','sunday'))}}
+
+    def save_policy(self, patch=None, revision=None, operation='settings:1:test'):
+        return self.connector.save_policy('nintendo:ABC',patch or self.policy_patch(),
+                                          revision or self.backend.device['policy_revision'],operation)
+
+    def test_zero_daily_policy_is_explicit_and_verified_without_changing_week(self):
+        self.connect();week=copy.deepcopy(self.backend.device['native_policy']['eachDayOfTheWeekRegulations'])
+        self.assertEqual(self.save_policy()['status'],'confirmed')
+        self.assertEqual(self.backend.device['native_policy']['dailyRegulations']['timeToPlayInOneDay']['limitTime'],0)
+        self.assertEqual(self.backend.device['native_policy']['eachDayOfTheWeekRegulations'],week)
+        self.assertEqual(self.backend.policy_writes,1)
+        self.save_policy();self.assertEqual(self.backend.policy_writes,1)
+
+    def test_weekly_policy_sets_seven_days_and_preserves_common_regulation(self):
+        self.connect();common=copy.deepcopy(self.backend.device['native_policy']['dailyRegulations'])
+        self.assertEqual(self.save_policy(self.policy_patch('EACH_DAY_OF_THE_WEEK'))['status'],'confirmed')
+        self.assertEqual(self.backend.device['native_policy']['dailyRegulations'],common)
+        self.assertEqual(self.backend.device['native_policy']['eachDayOfTheWeekRegulations']['sunday']['timeToPlayInOneDay']['limitTime'],90)
+
+    def test_policy_writes_refuse_stale_revision_and_existing_extra(self):
+        self.connect()
+        with self.assertRaises(nintendo.NintendoError): self.save_policy(revision='stale')
+        self.backend.extra=5
+        with self.assertRaises(nintendo.NintendoError): self.save_policy()
+        self.assertEqual(self.backend.policy_writes,0)
+        self.assertEqual(self.backend.cancels,0)
+
+    def test_unknown_policy_response_is_verified_by_target_read_without_replay(self):
+        self.connect();self.backend.mode='timeout'
+        self.assertEqual(self.save_policy()['status'],'confirmed')
+        self.connector.refresh_pending();self.save_policy()
+        self.assertEqual(self.backend.policy_writes,1)
+
+    def test_lagging_policy_does_not_claim_saved_or_resend_after_restart(self):
+        self.connect();self.backend.mode='delayed'
+        self.assertEqual(self.save_policy()['status'],'pending')
+        self.connector.close();self.connector=self.make_connector();self.connector.refresh_pending()
+        self.assertEqual(self.backend.policy_writes,1)
+        self.assertEqual(self.connector.operation_status('settings:1:test')['status'],'pending')
+
+    def test_invalid_policy_does_not_create_or_send_an_operation(self):
+        self.connect()
+        for field,value in (('timer_mode','other'),('forced_termination','true'),('week',{})):
+            patch=self.policy_patch('EACH_DAY_OF_THE_WEEK');patch[field]=value
+            with self.assertRaises(ValueError):self.save_policy(patch)
+        patch=self.policy_patch();patch['daily']['limit_minutes']=True
+        with self.assertRaises(ValueError):self.save_policy(patch)
+        self.assertEqual(self.backend.policy_writes,0)
+        self.assertIsNone(self.connector.operation_status('settings:1:test'))
+
+    def test_explicit_policy_conflict_does_not_block_future_operations_as_uncertain(self):
+        self.connect()
+        class Conflict(Exception): status_code=409
+        async def reject(*args):raise Conflict()
+        self.backend.policy=reject
+        self.assertEqual(self.save_policy()['status'],'failed')
+        self.assertEqual(self.grant()['status'],'confirmed')
+
+    def test_policy_verification_accepts_equivalent_disabled_json(self):
+        self.connect();original=self.backend.policy
+        async def normalized(device_id,regulations):
+            result=await original(device_id,regulations)
+            self.backend.device['native_policy']['dailyRegulations']['timeToPlayInOneDay'].pop('limitTime',None)
+            self.backend.device['policy_revision']=nintendo._policy_revision(self.backend.device['native_policy'])
+            return result
+        self.backend.policy=normalized
+        patch=self.policy_patch();patch['daily']['limit_minutes']=-1
+        self.assertEqual(self.save_policy(patch)['status'],'confirmed')
+
     def test_bedtime_flag_and_stage_committed_before_confirm(self):
         self.connect()
         self.backend.mode = 'next_step'
@@ -682,7 +863,9 @@ class SDKAdapterTests(unittest.TestCase):
         snapshot = asyncio.run(backend.snapshot())[0]
         self.assertEqual(snapshot['daily_extra_minutes'], 0)
         self.assertEqual(snapshot['bedtime_extra_minutes'], 20)
-        self.assertEqual(snapshot['extra_minutes'], 20)
+        self.assertEqual(snapshot['extra_minutes'], 0)
+        self.assertEqual(snapshot['budget_remaining_minutes'], 0)
+        self.assertTrue(snapshot['has_extra'])
         self.assertEqual(snapshot['bedtime'], '21:20')
         self.assertEqual(snapshot['last_sync'], 1700000000)
         self.assertTrue(snapshot['can_grant'])

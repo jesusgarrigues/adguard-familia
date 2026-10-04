@@ -24,7 +24,7 @@ from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
-MINUTES = (5, 10, 15, 20, 25, 30)
+MINUTES = (5, 10, 15, 20, 25, 30, 40, 60)
 CACHE_SECONDS = 20
 LOGIN_SECONDS = 600
 _REJECTED = {
@@ -95,6 +95,60 @@ def _timestamp(value):
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
         return None
     return value / 1000 if value >= 100000000000 else value
+
+
+def _revision(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def _policy_revision(value):
+    # Nintendo may omit disabled values instead of returning explicit nulls.
+    # Verify the effective policy, not an incidental JSON representation.
+    def regulation(raw):
+        raw = raw or {}
+        timer, night = raw.get('timeToPlayInOneDay', {}), raw.get('bedtime', {})
+        return {'limit': timer.get('limitTime') if timer.get('enabled') else None,
+                'bedtime': night.get('endingTime') if night.get('enabled') else None,
+                'morning': night.get('startingTime') if night.get('enabled') else None}
+    return _revision({'mode':value.get('timerMode'),'restriction':value.get('restrictionMode'),
+                      'daily':regulation(value.get('dailyRegulations')),
+                      'week':{day:regulation(raw) for day,raw in value.get('eachDayOfTheWeekRegulations',{}).items()}})
+
+
+def _policy_patch(patch, current):
+    if not isinstance(patch, dict) or set(patch) != {'timer_mode', 'forced_termination', 'daily', 'week'}:
+        raise ValueError('Configuración Nintendo incompleta.')
+    mode = patch['timer_mode']
+    if mode not in ('DAILY', 'EACH_DAY_OF_THE_WEEK') or type(patch['forced_termination']) is not bool:
+        raise ValueError('Modo Nintendo inválido.')
+    def regulation(value, previous):
+        if not isinstance(value, dict) or set(value) != {'limit_minutes', 'bedtime', 'morning'}:
+            raise ValueError('Introduce presupuesto, hora tope e inicio de la mañana.')
+        limit = value['limit_minutes']
+        if type(limit) is not int or not -1 <= limit <= 360:
+            raise ValueError('El presupuesto habitual debe estar entre 0 y 360 minutos; -1 significa sin límite.')
+        bedtime, morning = value['bedtime'], value['morning']
+        if bedtime is not None:
+            if not 16 * 60 <= _time_minutes(bedtime) <= 23 * 60 or not 5 * 60 <= _time_minutes(morning) <= 9 * 60:
+                raise ValueError('La hora tope debe estar entre 16:00 y 23:00 y la mañana entre 05:00 y 09:00.')
+        result = copy.deepcopy(previous)
+        result['timeToPlayInOneDay'] = {'enabled': limit >= 0, 'limitTime': limit if limit >= 0 else None}
+        result['bedtime'] = {'enabled': bedtime is not None,
+                            'endingTime': {'hour': _time_minutes(bedtime)//60, 'minute': _time_minutes(bedtime)%60} if bedtime else None,
+                            'startingTime': {'hour': _time_minutes(morning)//60, 'minute': _time_minutes(morning)%60} if bedtime else previous.get('bedtime', {}).get('startingTime', {'hour': 6, 'minute': 0})}
+        return result
+    result = copy.deepcopy(current)
+    result['timerMode'] = mode
+    result['restrictionMode'] = 'FORCED_TERMINATION' if patch['forced_termination'] else 'ALARM'
+    if mode == 'DAILY':
+        result['dailyRegulations'] = regulation(patch['daily'], current.get('dailyRegulations', {}))
+    else:
+        names = {'monday','tuesday','wednesday','thursday','friday','saturday','sunday'}
+        if not isinstance(patch['week'], dict) or set(patch['week']) != names:
+            raise ValueError('Completa los siete días de la semana.')
+        previous = current.get('eachDayOfTheWeekRegulations', {})
+        result['eachDayOfTheWeekRegulations'] = {day: regulation(patch['week'][day], previous.get(day, {})) for day in names}
+    return result
 
 
 class _NintendoBackend:
@@ -203,10 +257,10 @@ class _NintendoBackend:
                 effective = _api_time(extra_raw['bedtime'].get('endTime'))
                 bedtime_extra = (_time_minutes(effective) - _time_minutes(bedtime)) % 1440
                 bedtime = effective
-            extra = -1 if daily_extra == -1 else max(daily_extra, bedtime_extra)
-            # Nintendo can represent a grant as bedtime-only with inOneDay=null.
-            # Keep both dimensions for verification and match the SDK's budget.
-            remaining = None if limit == -1 or extra == -1 else max(0, limit + extra - used)
+            # A clock extension is not a daily budget extension. Preserve the
+            # two native dimensions instead of adding bedtime minutes to play.
+            extra = daily_extra
+            remaining = None if limit == -1 or daily_extra == -1 else max(0, limit + daily_extra - used)
             bedtime_remaining = None
             if bedtime:
                 bedtime_minutes = _time_minutes(bedtime)
@@ -214,7 +268,7 @@ class _NintendoBackend:
                 if end <= now and bedtime_minutes < 360 and now.hour >= 6:
                     end += timedelta(days=1)
                 bedtime_remaining = max(0, int((end - now).total_seconds() / 60))
-                remaining = bedtime_remaining if remaining is None else min(remaining, bedtime_remaining)
+            playable = min(remaining, bedtime_remaining) if remaining is not None and bedtime_remaining is not None else remaining
             alarm = owned_device.get('alarmSetting', device.extra.get('alarmSetting', {}))
             visibility = alarm.get('visibility') if isinstance(alarm, dict) else None
             alarms_enabled = {'VISIBLE': True, 'INVISIBLE': False}.get(visibility)
@@ -233,6 +287,15 @@ class _NintendoBackend:
                 'base_bedtime': base_bedtime, 'effective_bedtime': bedtime,
                 'bedtime_start': bedtime_start, 'bedtime_extra_minutes': bedtime_extra,
                 'daily_extra_minutes': daily_extra, 'bedtime_remaining_minutes': bedtime_remaining,
+                'budget_remaining_minutes': -1 if limit == -1 or daily_extra == -1 else remaining, 'playable_minutes_now': playable,
+                'has_extra': extra_raw is not None,
+                'extra_kind': 'both' if daily_extra and bedtime_extra else 'bedtime_only' if bedtime_extra else 'daily' if daily_extra else 'none',
+                'extra_expires_at': _timestamp(extra_raw.get('expiresAt')) if extra_raw else None,
+                'timer_mode': settings['playTimerRegulations'].get('timerMode'),
+                'weekly_limits': copy.deepcopy(settings['playTimerRegulations'].get('eachDayOfTheWeekRegulations', {})),
+                'daily_regulation': copy.deepcopy(settings['playTimerRegulations'].get('dailyRegulations', {})),
+                'native_policy': {key: copy.deepcopy(value) for key, value in settings['playTimerRegulations'].items()
+                                  if key in ('timerMode', 'restrictionMode', 'dailyRegulations', 'eachDayOfTheWeekRegulations')},
                 'forced_termination': bool(device.forced_termination_mode),
                 'alarms_enabled': alarms_enabled,
                 'grant_unavailable_reason': grant_reason,
@@ -240,6 +303,7 @@ class _NintendoBackend:
                 'console_sync_pending': sync != 'SYNCHRONIZED', 'available': True,
                 'can_grant': limit >= 0 and extra >= 0,
             })
+            result[-1]['policy_revision'] = _policy_revision(result[-1]['native_policy'])
         return result
 
     async def grant(self, device_id, minutes):
@@ -251,6 +315,9 @@ class _NintendoBackend:
 
     async def confirm(self, device_id, minutes):
         return await self.api.async_confirm_extra_playing_time(device_id, minutes, with_bedtime=True)
+
+    async def policy(self, device_id, regulations):
+        return await self.api.async_update_play_timer(device_id, regulations)
 
     async def close(self):
         if self.session is not None:
@@ -301,6 +368,10 @@ class Connector:
             ('expected_bedtime', 'TEXT'), ('baseline_daily_extra', 'REAL'),
             ('baseline_limit', 'REAL'), ('baseline_suspended', 'INTEGER'),
             ('baseline_forced', 'INTEGER'), ('night_only', 'INTEGER NOT NULL DEFAULT 0'),
+            ('model_version', 'INTEGER NOT NULL DEFAULT 1'), ('expected_daily', 'REAL'),
+            ('chunks', 'TEXT'), ('chunk_index', 'INTEGER NOT NULL DEFAULT 0'),
+            ('confirmed_minutes', 'INTEGER NOT NULL DEFAULT 0'), ('native_expires_at', 'REAL'),
+            ('expected_policy', 'TEXT'), ('policy_payload_hash', 'TEXT'),
         ):
             if column not in columns:
                 self._db.execute(f'ALTER TABLE operations ADD COLUMN {column} {definition}')
@@ -466,6 +537,8 @@ class Connector:
             seen.add(device['key'])
             for key in ('used_minutes', 'remaining_minutes', 'limit_minutes', 'extra_minutes'):
                 _number(device.get(key), nullable=key in ('remaining_minutes', 'extra_minutes'), minimum=-1 if key in ('limit_minutes', 'extra_minutes') else 0)
+            if 'daily_extra_minutes' in device:
+                _number(device['daily_extra_minutes'], minimum=-1)
             if device.get('available') is not True:
                 raise NintendoError('La consola Nintendo no tiene datos actuales; no se puede conceder tiempo.')
             device['last_sync'] = _timestamp(device.get('last_sync'))
@@ -481,7 +554,7 @@ class Connector:
             device['can_grant'] = bool(device.get('can_grant')) and not pending
             device['can_cancel'] = self._has_extra(device) and not pending
             latest = self._db.execute('''SELECT * FROM operations WHERE device_key=?
-                AND account_hash=? AND day=? ORDER BY created_at DESC LIMIT 1''',
+                AND account_hash=? AND day=? ORDER BY created_at DESC,rowid DESC LIMIT 1''',
                 (device['key'], self._account(), self._today())).fetchone()
             device['last_operation'] = self._result(latest) if latest else None
         return result
@@ -503,7 +576,7 @@ class Connector:
 
     def _validate(self, device_key, minutes, *, allow_pending=False, for_cancel=False):
         if type(minutes) is not int or minutes not in MINUTES:
-            raise ValueError('Nintendo admite permisos de 5 a 30 minutos, en pasos de 5.')
+            raise ValueError('Selecciona una concesión de 5, 10, 15, 20, 25, 30, 40 o 60 minutos.')
         if not isinstance(device_key, str) or not device_key.startswith('nintendo:'):
             raise ValueError('Selecciona una consola Nintendo válida.')
         try:
@@ -524,7 +597,9 @@ class Connector:
             return self._decorate([self._validate(device_key, minutes)])[0]
 
     def _preflight(self, device, minutes, extend_bedtime):
-        if device['limit_minutes'] + device['extra_minutes'] + minutes - device['used_minutes'] <= 0:
+        daily = device.get('daily_extra_minutes', device['extra_minutes'])
+        budget_after = device['limit_minutes'] + daily + minutes - device['used_minutes']
+        if budget_after <= 0:
             raise NintendoError('El tiempo solicitado no alcanza para superar el uso ya registrado. Elige una duración mayor dentro de tu límite de aprobación.')
         if not extend_bedtime and device.get('bedtime'):
             remaining = device.get('bedtime_remaining_minutes')
@@ -535,7 +610,7 @@ class Connector:
                 if end <= now and ending < 360 and now.hour >= 6:
                     end += timedelta(days=1)
                 remaining = max(0, (end - now).total_seconds() / 60)
-            if remaining < minutes - 1:
+            if remaining < budget_after - 1:
                 raise NintendoError('El horario de descanso impide conceder todos esos minutos. Reduce la duración o aprueba explícitamente ampliar el descanso de hoy.')
 
     @staticmethod
@@ -548,6 +623,10 @@ class Connector:
                 'kind': row['kind'], 'minutes': row['minutes'], 'status': row['status'],
                 'message': row['message'], 'cancelled': bool(row['cancelled']),
                 'extend_bedtime': bool(row['extend_bedtime']), 'stage': row['stage'],
+                'confirmed_minutes': row['confirmed_minutes'] if row['model_version'] == 2 else (row['minutes'] if row['status'] == 'confirmed' and row['kind'] == 'grant' else 0),
+                'steps_total': len(json.loads(row['chunks'])) if row['chunks'] else 1,
+                'steps_confirmed': row['chunk_index'] if row['model_version'] == 2 else int(row['status'] == 'confirmed'),
+                'night_only': bool(row['night_only']),
                 'created_at': row['created_at'], 'updated_at': row['updated_at']}
 
     def operation_status(self, operation_id):
@@ -569,11 +648,15 @@ class Connector:
         for row in self._pending():
             if row['account_hash'] != self._account():
                 continue
-            if row['day'] != self._today():
+            if row['day'] != self._today() or (row['native_expires_at'] and self._clock() >= row['native_expires_at']):
                 self._finish(row['operation_id'], 'failed', 'No se pudo confirmar el permiso antes de finalizar el día; no se ha reenviado.')
                 continue
             device = by_key.get(row['device_key'])
             if not device or device.get('available') is not True:
+                continue
+            if row['kind'] == 'policy':
+                if device.get('policy_revision') == row['expected_policy']:
+                    self._finish(row['operation_id'], 'confirmed', 'Configuración habitual confirmada por Nintendo.')
                 continue
             extra = device.get('extra_minutes')
             # Read-after-write can lag. An ACK plus exactly the expected total
@@ -588,8 +671,21 @@ class Connector:
                     self._finish(row['operation_id'], 'failed', 'La configuración actual de Nintendo entra en conflicto con el permiso. No se reenviará la operación ni se modificarán las restricciones permanentes.')
                     continue
             bedtime = device.get('effective_bedtime', device.get('bedtime'))
-            if row['ack'] and extra == row['expected'] and bedtime == row['expected_bedtime']:
+            daily_matches = (device.get('daily_extra_minutes', extra) == row['expected_daily']) if row['model_version'] == 2 else extra == row['expected']
+            if row['ack'] and daily_matches and bedtime == row['expected_bedtime']:
+                if row['model_version'] == 2 and row['kind'] == 'grant':
+                    chunks = json.loads(row['chunks'])
+                    count = row['chunk_index'] + 1
+                    confirmed = row['confirmed_minutes'] + chunks[row['chunk_index']]
+                    self._db.execute('UPDATE operations SET chunk_index=?,confirmed_minutes=?,ack=0,stage=? WHERE operation_id=?',
+                                     (count, confirmed, 'ready_next' if count < len(chunks) else 'complete', row['operation_id']))
+                    self._db.commit()
+                    if count < len(chunks):
+                        self._finish(row['operation_id'], 'pending', f'{confirmed} de {row["minutes"]} minutos confirmados. Preparando el siguiente paso aprobado.')
+                        continue
                 message = 'Tiempo extra confirmado en Nintendo.' if row['kind'] == 'grant' else 'Tiempo extra cancelado en Nintendo.'
+                if row['kind'] == 'grant' and row['night_only']:
+                    message = 'Nintendo ha confirmado la ampliación de la hora tope; el presupuesto diario se muestra por separado.'
                 self._finish(row['operation_id'], 'confirmed', message)
                 if row['kind'] == 'cancel':
                     self._db.execute('''UPDATE operations SET cancelled=1 WHERE
@@ -602,6 +698,10 @@ class Connector:
         with self._lock:
             if self._credentials and self._pending():
                 self.devices(force=True)
+                # ready_next is a new, already-approved step, never a resend.
+                for row in list(self._pending()):
+                    if row['model_version'] == 2 and row['stage'] == 'ready_next':
+                        self._advance(row)
             return [self._result(row) for row in self._db.execute('SELECT * FROM operations WHERE status=?', ('pending',)).fetchall()]
 
     def _existing(self, operation_id, device_key, minutes, kind, extend_bedtime=False):
@@ -633,7 +733,11 @@ class Connector:
                  device.get('base_bedtime', device.get('bedtime')) if kind == 'cancel' else device.get('effective_bedtime', device.get('bedtime')),
                  device.get('daily_extra_minutes', baseline), device['limit_minutes'],
                  int(bool(device.get('restrictions_suspended'))), int(bool(device.get('forced_termination')))))
-            self._db.commit()  # durable BEFORE sending an additive remote write
+            chunks = [30, 5, 5] if minutes == 40 else [minutes]
+            self._db.execute('''UPDATE operations SET model_version=2,chunks=?,expected_daily=?,native_expires_at=? WHERE operation_id=?''',
+                             (json.dumps(chunks), device.get('daily_extra_minutes', baseline) + chunks[0] if kind == 'grant' else 0,
+                              device.get('extra_expires_at'), operation_id))
+            self._db.commit()  # full versioned plan durable BEFORE any write
         except Exception:
             self._db.rollback()
             raise
@@ -674,13 +778,13 @@ class Connector:
         start = fresh.get('bedtime_start')
         if start and _time_minutes(to_time) < 360 and _time_minutes(to_time) >= _time_minutes(start):
             return self._finish(operation_id, 'failed', 'El horario propuesto entra en conflicto con el inicio del siguiente día. No se ha confirmado.')
-        daily_budget = max(0, fresh['limit_minutes'] + fresh['extra_minutes'] - fresh['used_minutes'])
+        daily_budget = max(0, fresh['limit_minutes'] + fresh.get('daily_extra_minutes', fresh['extra_minutes']) - fresh['used_minutes'])
         night_only = daily_budget >= minutes
         target_night_extra = (_time_minutes(to_time) - _time_minutes(row['base_bedtime'])) % 1440
-        expected = max(fresh.get('daily_extra_minutes', fresh['extra_minutes']), target_night_extra) if night_only else max(row['expected'], target_night_extra)
+        expected = fresh.get('daily_extra_minutes', fresh['extra_minutes']) + (0 if night_only else minutes)
         self._db.execute('''UPDATE operations SET stage='confirm_sent',expected_bedtime=?,
-            expected=?,night_only=?,ack=0,updated_at=? WHERE operation_id=?''',
-            (to_time, expected, int(night_only), self._clock(), operation_id))
+            expected=?,expected_daily=?,night_only=?,ack=0,updated_at=? WHERE operation_id=?''',
+            (to_time, expected, expected, int(night_only), self._clock(), operation_id))
         self._db.commit()  # includes the explicit flag BEFORE second mutation
         return _response_payload(self._run(self._backend.confirm(device['id'], minutes)))
 
@@ -730,12 +834,64 @@ class Connector:
             device = self._validate(device_key, minutes)
             self._preflight(device, minutes, extend_bedtime)
             self._insert(operation_id, device, minutes, 'grant', extend_bedtime=extend_bedtime)
-            return self._mutate(operation_id, device, minutes, 'grant')
+            return self._mutate(operation_id, device, 30 if minutes == 40 else minutes, 'grant')
+
+    def save_policy(self, device_key, patch, revision, operation_id):
+        with self._lock:
+            payload_hash = _revision(patch)
+            prior = self._existing(operation_id, device_key, 0, 'policy')
+            if prior:
+                row = self._db.execute('SELECT policy_payload_hash FROM operations WHERE operation_id=?', (operation_id,)).fetchone()
+                if row['policy_payload_hash'] != payload_hash:
+                    raise ValueError('El identificador ya corresponde a otros ajustes.')
+                return prior
+            device = self._validate(device_key, 5, for_cancel=True)
+            if not isinstance(device.get('native_policy'), dict) or revision != device.get('policy_revision'):
+                raise NintendoError('Los ajustes han cambiado en Nintendo. Actualiza antes de guardar.')
+            target = _policy_patch(patch, device['native_policy'])
+            if self._has_extra(device):
+                raise NintendoError('Retira primero la ampliación de hoy antes de cambiar los ajustes habituales. No se retirará automáticamente.')
+            self._insert(operation_id, device, 0, 'policy')
+            self._db.execute("UPDATE operations SET stage='policy_sent',expected_policy=?,policy_payload_hash=? WHERE operation_id=?",
+                             (_policy_revision(target), payload_hash, operation_id));self._db.commit()
+            try:
+                _response_payload(self._run(self._backend.policy(device['id'], target)))
+                self._finish(operation_id, 'pending', 'Ajustes enviados; esperando la lectura de Nintendo.', ack=True)
+            except Exception as error:
+                rejected = getattr(error, 'status_code', None) in (400, 401, 403, 404, 409, 422)
+                self._finish(operation_id, 'failed' if rejected else 'pending', _safe_error(error) + (' Nintendo ha rechazado los ajustes.' if rejected else ' No se reenviarán los ajustes automáticamente.'))
+            self.devices(force=True)
+            return self.operation_status(operation_id)
+
+    def _advance(self, row):
+        sent = False
+        try:
+            fresh = next((d for d in self._read() if d['key'] == row['device_key']), None)
+            current = self._db.execute('SELECT * FROM operations WHERE operation_id=?', (row['operation_id'],)).fetchone()
+            if current['status'] != 'pending' or current['stage'] != 'ready_next':
+                return self._result(current)
+            if (not fresh or row['day'] != self._today() or
+                    fresh.get('daily_extra_minutes', fresh.get('extra_minutes')) != row['expected_daily'] or
+                    fresh.get('effective_bedtime', fresh.get('bedtime')) != row['expected_bedtime'] or
+                    fresh.get('base_bedtime', fresh.get('bedtime')) != row['base_bedtime'] or
+                    fresh['limit_minutes'] != row['baseline_limit'] or
+                    bool(fresh.get('forced_termination')) != bool(row['baseline_forced'])):
+                raise NintendoError('Los ajustes o el tiempo extra han cambiado antes del siguiente paso.')
+            chunks = json.loads(row['chunks'])
+            minutes = chunks[row['chunk_index']]
+            self._preflight(fresh, row['minutes'] - row['confirmed_minutes'], bool(row['extend_bedtime']))
+            self._db.execute('''UPDATE operations SET stage='update_sent',ack=0,expected_daily=?,expected=?,baseline_daily_extra=?,updated_at=? WHERE operation_id=?''',
+                             (row['expected_daily'] + minutes, row['expected_daily'] + minutes, row['expected_daily'], self._clock(), row['operation_id']))
+            self._db.commit()  # crash after this point must never repeat this step
+            sent = True
+            return self._mutate(row['operation_id'], fresh, minutes, 'grant')
+        except Exception as error:
+            return self._finish(row['operation_id'], 'pending' if sent else 'failed', f'{row["confirmed_minutes"]} de {row["minutes"]} minutos confirmados. ' + _safe_error(error))
 
     @staticmethod
     def _has_extra(device):
         extra = device.get('extra_minutes')
-        return device.get('available') is True and extra is not None and (extra > 0 or extra == -1)
+        return device.get('available') is True and (bool(device.get('has_extra')) or (extra is not None and (extra > 0 or extra == -1)) or device.get('bedtime_extra_minutes', 0) > 0)
 
     def _cancel_source(self, device):
         if not device.get('available') or device.get('extra_minutes') is None or device.get('extra_minutes', 0) <= 0:
@@ -752,7 +908,7 @@ class Connector:
                 raise ValueError('La confirmación de retirar todo el tiempo debe ser verdadera o falsa.')
             if cancel_all_today:
                 _number(expected_extra_minutes, minimum=-1)
-                if expected_extra_minutes != -1 and expected_extra_minutes <= 0:
+                if expected_extra_minutes != -1 and expected_extra_minutes < 0:
                     raise ValueError('No hay tiempo extra que retirar.')
                 if expected_bedtime is not None:
                     _time_minutes(expected_bedtime)

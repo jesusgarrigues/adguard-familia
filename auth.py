@@ -171,7 +171,7 @@ def review(user,body,permit):
         minutes=body.get('minutes',row['minutes'])
         if decision=='approve':
             grant(user,row['client'],minutes)
-            if row['client'].startswith('nintendo:') and minutes not in (5,10,15,20,25,30): raise ValueError('Nintendo admite entre 5 y 30 minutos, en pasos de 5')
+            if row['client'].startswith('nintendo:') and minutes not in (5,10,15,20,25,30,40,60): raise ValueError('Selecciona 5, 10, 15, 20, 25, 30, 40 o 60 minutos de tiempo extra')
             # Persist approval before remote writes. Nintendo grants must not be replayed.
             approved_bedtime=int(extend_bedtime) if row['client'].startswith('nintendo:') else None
             DB.execute("UPDATE requests SET status='approved_pending',reviewer=?,reviewed=?,approved_minutes=?,approved_extend_bedtime=? WHERE id=?",(user['id'],time.time(),minutes,approved_bedtime,row['id']));DB.commit()

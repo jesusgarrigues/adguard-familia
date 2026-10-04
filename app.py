@@ -533,6 +533,12 @@ class Handler(BaseHTTPRequestHandler):
             if not user: return self.respond(401,{'error':'Inicia sesión para continuar'})
             if not hmac.compare_digest(self.headers.get('X-CSRF-Token',''),user['csrf']): raise auth.Forbidden('Sesión inválida. Vuelve a entrar')
             if self.path=='/api/auth/logout': auth.logout(self.cookie_token());return self.respond(200,{'ok':True})
+            if self.path=='/api/nintendo/policy':
+                auth.grant(user,body['client'],edit=True)
+                op=operation_key(user,body,'settings')
+                result=NINTENDO.save_policy(body['client'],body['patch'],body['revision'],op)
+                auth.audit(user,'nintendo_policy',{'client':body['client'],'operation_id':op,'status':result['status']})
+                return self.respond(200,result)
             if self.path.startswith('/api/nintendo/'):
                 auth.require(user,'admin')
                 if self.path=='/api/nintendo/login/begin': return self.respond(200,NINTENDO.begin_login())
@@ -555,7 +561,7 @@ class Handler(BaseHTTPRequestHandler):
                 auth.require(user,'admin','responsable')
                 if type(body.get('id')) is not int or body['id']<=0: raise ValueError('Identificador de solicitud inválido')
             if self.path=='/api/request' and str(body.get('client','')).startswith('nintendo:'):
-                if type(body.get('minutes')) is not int or body['minutes'] not in (5,10,15,20,25,30): raise ValueError('Nintendo admite entre 5 y 30 minutos, en pasos de 5')
+                if type(body.get('minutes')) is not int or body['minutes'] not in (5,10,15,20,25,30,40,60): raise ValueError('Selecciona 5, 10, 15, 20, 25, 30, 40 o 60 minutos de tiempo extra')
                 return self.respond(200,{'ok':True,'id':auth.request_access(user,body,validate_request)})
             if self.path=='/api/request/review':
                 with auth.LOCK: requested=auth.DB.execute('SELECT client FROM requests WHERE id=?',(body['id'],)).fetchone()
@@ -589,7 +595,7 @@ class Handler(BaseHTTPRequestHandler):
                 elif self.path=='/api/server': result=save_server(body)
                 elif self.path=='/api/request':
                     if str(body.get('client','')).startswith('nintendo:'):
-                        if type(body.get('minutes')) is not int or body['minutes'] not in (5,10,15,20,25,30): raise ValueError('Nintendo admite entre 5 y 30 minutos, en pasos de 5')
+                        if type(body.get('minutes')) is not int or body['minutes'] not in (5,10,15,20,25,30,40,60): raise ValueError('Selecciona 5, 10, 15, 20, 25, 30, 40 o 60 minutos de tiempo extra')
                     result={'ok':True,'id':auth.request_access(user,body,validate_request)}
                 elif self.path=='/api/request/review':
                     result=auth.review(user,body,lambda c,s,m,extend_bedtime=False: grant_access(c,s,m,'request:'+str(body['id']),extend_bedtime=extend_bedtime)) or {'ok':True}
@@ -599,7 +605,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.respond(200,result)
         except nintendo.NintendoError as e:
             data={'error':str(e)}
-            if self.path in ('/api/permit','/api/cancel') and 'op' in locals():
+            if self.path in ('/api/permit','/api/cancel','/api/nintendo/policy') and 'op' in locals():
                 try:
                     operation=NINTENDO.operation_status(op)
                     data['operation_started']=operation is not None

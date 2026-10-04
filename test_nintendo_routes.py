@@ -18,6 +18,32 @@ class NintendoRoutes(unittest.TestCase):
         h=self.handler(self.child,'/api/permit',{'client':'nintendo:switch1','service':'@nintendo','minutes':20,'operation_id':'a'*32})
         with patch.object(app.NINTENDO,'grant') as grant:h.do_POST();grant.assert_not_called()
         self.assertEqual(h.respond.call_args.args[0],403)
+    def test_forty_and_sixty_requests_require_adult_approval_of_the_whole_amount(self):
+        for minutes in (40,60):
+            h=self.handler(self.child,'/api/request',{'client':'nintendo:switch1','service':'@nintendo','minutes':minutes})
+            with patch.object(app.NINTENDO,'validate'),patch.object(app.NINTENDO,'grant') as grant:h.do_POST();grant.assert_not_called()
+            self.assertEqual(h.respond.call_args.args[0],200)
+            rid=h.respond.call_args.args[1]['id']
+            approve=self.handler(self.parent,'/api/request/review',{'id':rid,'decision':'approve','minutes':minutes})
+            with patch.object(app.NINTENDO,'grant') as grant:approve.do_POST();grant.assert_not_called()
+            self.assertEqual(approve.respond.call_args.args[0],400)
+            self.assertEqual(next(r for r in auth.requests_for(self.child) if r['id']==rid)['status'],'pending')
+            approve=self.handler(self.admin,'/api/request/review',{'id':rid,'decision':'approve','minutes':minutes})
+            with patch.object(app.NINTENDO,'grant',return_value={'status':'pending'}) as grant:approve.do_POST()
+            grant.assert_called_once_with('nintendo:switch1',minutes,'request:'+str(rid),extend_bedtime=False)
+    def test_policy_requires_scope_and_permission_to_edit_permanent_rules(self):
+        body={'client':'nintendo:switch1','operation_id':'c'*32,'revision':'rev','patch':{}}
+        for user in (self.child,self.parent):
+            h=self.handler(user,'/api/nintendo/policy',body)
+            with patch.object(app.NINTENDO,'save_policy') as save:h.do_POST();save.assert_not_called()
+            self.assertEqual(h.respond.call_args.args[0],403)
+        parent=auth.save_user(self.admin,{'id':self.parent['id'],'edit_policy':True})
+        h=self.handler(parent,'/api/nintendo/policy',body)
+        with patch.object(app.NINTENDO,'save_policy',return_value={'status':'confirmed'}) as save:h.do_POST()
+        save.assert_called_once_with('nintendo:switch1',{},'rev','settings:'+str(parent['id'])+':'+'c'*32)
+        h=self.handler(parent,'/api/nintendo/policy',dict(body,client='nintendo:other'))
+        with patch.object(app.NINTENDO,'save_policy') as save:h.do_POST();save.assert_not_called()
+        self.assertEqual(h.respond.call_args.args[0],403)
     def test_parent_scope_enforced_before_cloud_mutation(self):
         h=self.handler(self.parent,'/api/permit',{'client':'nintendo:switch2','service':'@nintendo','minutes':20,'operation_id':'a'*32})
         with patch.object(app.NINTENDO,'grant') as grant:h.do_POST();grant.assert_not_called()
