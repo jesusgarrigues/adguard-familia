@@ -18,6 +18,7 @@ const requests=[{id:1,user_id:2,username:'martin',avatar:'face-04',client:'ninte
 state.requests=requests;
 const user={id:1,username:'admin',avatar:'face-01',role:'admin',clients:[],edit_policy:true,max_minutes:1440};
 let authenticEnabled=false,authenticLinked=false,authenticPending=null;const authenticConfig={enabled:false,issuer:'',discovery_url:'',client_id:'',public_url:'',secret_set:false,callback_url:''};
+const alertPreferences={mode:'all',services:[],protections:[],cooldown_minutes:5,clients:{}};let alertsFailure=false;
 const calls=[];let adguardDown=false,clientFailure=null,readFailures=0,saveDelay=0;
 (async()=>{
  const browser=await chromium.launch({executablePath:process.env.CHROMIUM_EXECUTABLE||['/usr/bin/chromium','/usr/bin/google-chrome','/opt/google/chrome/chrome'].find(fs.existsSync),headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--disable-breakpad','--disable-crash-reporter']});
@@ -42,6 +43,11 @@ const calls=[];let adguardDown=false,clientFailure=null,readFailures=0,saveDelay
    if(path==='authentik/test')return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,message:'Proveedor simulado: descubrimiento y firma comprobados.'})});
    if(path==='authentik/config')return route.fulfill({contentType:'application/json',body:JSON.stringify(authenticConfig)});
    if(path==='me/authentik')return route.fulfill({contentType:'application/json',body:JSON.stringify({enabled:authenticEnabled,linked:authenticLinked,identity:authenticLinked?{label:'adulto-authentik',issuer:'https://auth.test/application/o/parental/'}:null,pending:authenticPending})});
+   if(path==='me/notifications'){
+    if(body&&alertsFailure)return route.fulfill({status:400,contentType:'application/json',body:JSON.stringify({error:'No se pudo guardar el aviso de prueba'})});
+    if(body)Object.assign(alertPreferences,body);
+    return route.fulfill({contentType:'application/json',body:JSON.stringify({preferences:alertPreferences,updated:Date.now()/1000,services,clients:clients.map(c=>({name:c.name,ignore_querylog:c.ignore_querylog}))})});
+   }
    if(path==='me/avatar'&&body){user.avatar=body.avatar;return route.fulfill({contentType:'application/json',body:JSON.stringify({user})});}
    if(path==='client/icon'&&body){const device=body.client.startsWith('nintendo:')?native.devices.find(d=>d.key===body.client):state.clients.find(c=>c.name===body.client);device.ui_icon=body.icon==='auto'?null:body.icon;}
    if(path==='nintendo/operation/close'&&body){
@@ -293,8 +299,35 @@ const calls=[];let adguardDown=false,clientFailure=null,readFailures=0,saveDelay
  page.once('dialog',d=>d.dismiss());await page.evaluate(()=>navigateNotification({kind:'request',id:1}));assert.equal(await page.evaluate(()=>page),'settings');assert.equal(await page.evaluate(()=>dirty),true);
  page.once('dialog',d=>d.accept());await page.evaluate(()=>navigateNotification({kind:'request',id:1}));await page.locator('[data-request-id="1"].notification-target').waitFor();
  await page.evaluate(()=>navigator.serviceWorker.dispatchEvent(new MessageEvent('message',{data:{type:'parental:navigate',target:{kind:'client',client:'iMac de Emma',service:'youtube'}}})));
- await page.locator('#adguard-service-list [data-service-row="youtube"].notification-target').waitFor();assert.equal(await page.locator('#adguard-service-list [data-service-row]').count(),1);
- await page.screenshot({path:shots+'/parental-aviso-destino-servicio.png'});await page.locator('#adguard-dialog-backdrop').getByRole('button',{name:'Cerrar',exact:true}).click();
+ await page.locator('#blocked-authorization').waitFor();assert.equal(await page.locator('#blocked-authorization-title').innerText(),'Permitir YouTube');
+ assert.equal(await page.locator('#blocked-authorization #authorization-submit').count(),0); // existing temporary permission, no duplicate grant
+ await page.locator('#blocked-authorization').getByRole('button',{name:'Cerrar',exact:true}).click();
+ state.leases=state.leases.filter(l=>l.service!=='youtube');
+ await page.evaluate(()=>navigateNotification({kind:'client',client:'iMac de Martín',service:'youtube'}));
+ for(const width of [320,375,390,430]){await page.setViewportSize({width,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);const size=await page.locator('.authorization-modal').evaluate(n=>({scroll:n.scrollWidth,width:n.clientWidth}));assert.ok(size.scroll<=size.width+1);}
+ await page.locator('#authorization-minutes').selectOption('15');
+ const previousPermits=calls.filter(c=>c.path==='permit').length;
+ await page.locator('#authorization-submit').click();await page.waitForFunction(()=>document.querySelector('#authorization-feedback').textContent.includes('Permiso concedido'));
+ assert.equal(calls.filter(c=>c.path==='permit').length,previousPermits+1);assert.deepEqual(calls.filter(c=>c.path==='permit').at(-1).body,{client:'iMac de Martín',service:'youtube',minutes:15,from_blocked_event:true});
+ await page.screenshot({path:shots+'/movil-autorizacion-youtube.png'});await page.screenshot({path:shots+'/parental-aviso-destino-servicio.png'});
+ await page.locator('#blocked-authorization').getByRole('button',{name:'Cerrar',exact:true}).click();
+ await page.evaluate(()=>go('settings'));await page.locator('#alert-default-mode').waitFor();
+ await page.locator('#alert-default-mode').selectOption('selected');await page.locator('.alert-defaults input[type=search]').fill('YouTube');
+ await page.locator('.alert-defaults [data-alert-service="youtube"]').check();
+ await page.locator('.alert-client-group>summary').click();
+ await page.locator('[data-alert-client="iMac de Martín"]>summary').click();
+ await page.locator('[data-alert-inherit="iMac de Martín"]').uncheck();
+ await page.locator('[data-alert-client="iMac de Martín"] select').selectOption('none');
+ await page.locator('#alert-cooldown').fill('10');
+ for(const width of [320,375,390,430]){await page.setViewportSize({width,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);}
+ alertsFailure=true;await page.locator('#alert-save').click();await page.waitForFunction(()=>document.querySelector('#blocked-alert-settings [role=status]').textContent.includes('No se pudo guardar'));
+ assert.equal(await page.evaluate(()=>dirty),true);alertsFailure=false;
+ await page.locator('#alert-save').click();await page.waitForFunction(()=>document.querySelector('#blocked-alert-settings [role=status]').textContent.includes('Avisos guardados'));
+ assert.equal(alertPreferences.cooldown_minutes,10);assert.ok(alertPreferences.services.includes('youtube'));assert.equal(alertPreferences.clients['iMac de Martín'].mode,'none');
+ await page.screenshot({path:shots+'/movil-preferencias-avisos.png',fullPage:true});
+ await page.evaluate(()=>go('clients'));await page.evaluate(()=>go('settings'));await page.locator('#alert-default-mode').waitFor();assert.equal(await page.locator('#alert-default-mode').inputValue(),'selected');
+
+ await page.evaluate(()=>go('clients'));
  await page.evaluate(()=>navigateNotification({kind:'request',id:999}));await page.waitForFunction(()=>document.getElementById('message').textContent.includes('no está disponible'));
  await page.evaluate(()=>{window.badgeCalls=[];Object.defineProperty(navigator,'setAppBadge',{value:async n=>window.badgeCalls.push(['set',n]),configurable:true});Object.defineProperty(navigator,'clearAppBadge',{value:async()=>window.badgeCalls.push(['clear']),configurable:true});ParentalUI.setRequests([],null);ParentalUI.setRequests(state.requests,me)});
  await page.waitForFunction(()=>window.badgeCalls.some(c=>c[0]==='set'&&c[1]===1));await page.evaluate(()=>ParentalUI.setRequests([],null));await page.waitForFunction(()=>window.badgeCalls.at(-1)[0]==='clear');

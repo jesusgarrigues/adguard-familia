@@ -127,6 +127,7 @@
     notifications.append(make('p', 'Recibe avisos de solicitudes y consultas bloqueadas mientras el panel esté abierto.'));
     window.ParentalNotifications.panel(notifications);
     const badgeHint=make('p','','notification-scope');badgeHint.dataset.appBadgeStatus='';notifications.append(badgeHint);window.ParentalBadges?.render();
+    callbacks.blockedAlerts?.(root,account);
     const installation = group('Instalar Parental'); installation.id = 'install-settings';
     const identity = make('div', '', 'install-identity'), image = make('img'); image.src = '/apple-touch-icon.png'; image.alt = ''; image.className = 'install-icon';
     const hint = make('p'); hint.dataset.installHint = ''; identity.append(image, hint); installation.append(identity);

@@ -52,3 +52,8 @@ Las sesiones normales utilizan cookies HttpOnly y SameSite=Strict. La vuelta des
 La configuración privada se guarda en `/data/authentik.json` con modo `0600`; identidades y transacciones se guardan en `accounts.db`. Incluye estos archivos en las copias de seguridad del volumen, sin publicarlos. No se guardan access/refresh/ID tokens después de verificar el acceso.
 
 Fuentes: [proveedor OIDC de Authentik](https://docs.goauthentik.io/add-secure-apps/providers/oauth2/) y [creación de proveedor](https://docs.goauthentik.io/add-secure-apps/providers/oauth2/create-oauth2-provider/). Las pruebas automatizadas utilizan un proveedor simulado con ID tokens RSA firmados. La conexión final debe configurarse y validarse con tu Authentik real.
+
+
+## Google y reautenticación al vincular cuentas
+
+Parental pide `prompt=login` al vincular una identidad a una cuenta local; el inicio de sesión ordinario no añade ese parámetro. Si Google devuelve «Flow does not apply to current user» cuando ya existe una sesión Authentik, revisa Flujos y etapas → Flujos → `default-source-authentication` → Editar → Autenticación. El requisito `Require no authentication` puede impedir reautenticación con sesión abierta. Cambiarlo a `No requirement`, conservando la política `default-source-authentication-if-sso` y la etapa de inicio de sesión, resolvió el caso confirmado por el usuario en [#73](https://github.com/jesusgarrigues/parental/issues/73). El comportamiento está reportado [en Authentik #26677](https://github.com/goauthentik/authentik/issues/26677). No eliminar las políticas SSO ni los grupos de acceso de la aplicación.

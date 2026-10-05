@@ -181,3 +181,8 @@ No uses `down -v` ni crees un volumen nuevo para este cambio de nombre. Los dato
 Los selectores contienen 91 iconos de clientes (Apple, Amazon/Alexa, redes, domótica y autohospedados) y 80 imágenes de usuarios, con categorías y búsqueda. [Catálogo y procedencia](docs/catalogos-apariencia.md).
 
 El acceso OIDC con Authentik se configura en **Ajustes → Parental → Acceso e identidad · Authentik**. Cada persona vincula su cuenta existente desde **Mi perfil → Acceso con Authentik**, confirmando la contraseña local, la identidad externa y después ambas cuentas. Roles, clientes, avatar e historial se conservan; no hay unión automática por email ni roles asignados por grupos externos. El acceso local sigue disponible para recuperación. [Guía de Authentik](docs/authentik.md).
+
+
+### Avisos selectivos de bloqueos
+
+Configura servicios, protecciones opcionales e intervalos por responsable en Ajustes → Parental → Intentos bloqueados, con personalización por cliente. Al pulsar el aviso se abre la autorización del cliente/servicio concreto. [Guía y diagnóstico](docs/avisos-bloqueos.md). Avisos de navegador con panel abierto; entrega externa con app cerrada sigue pendiente.

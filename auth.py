@@ -18,7 +18,8 @@ def init(folder):
     CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,user_id INTEGER,csrf TEXT,expires REAL);
     CREATE TABLE IF NOT EXISTS requests(id INTEGER PRIMARY KEY,user_id INTEGER,client TEXT,service TEXT,minutes INTEGER,reason TEXT,status TEXT,created REAL,reviewer INTEGER,reviewed REAL,approved_minutes INTEGER);
     CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY,time REAL,user_id INTEGER,action TEXT,detail TEXT);
-    CREATE TABLE IF NOT EXISTS attempts(key TEXT PRIMARY KEY,count INTEGER,until REAL);''')
+    CREATE TABLE IF NOT EXISTS attempts(key TEXT PRIMARY KEY,count INTEGER,until REAL);
+    CREATE TABLE IF NOT EXISTS notification_preferences(user_id INTEGER PRIMARY KEY, config TEXT NOT NULL, updated REAL NOT NULL);''')
     columns={row['name'] for row in DB.execute('PRAGMA table_info(requests)')}
     if 'extend_bedtime' not in columns: DB.execute('ALTER TABLE requests ADD COLUMN extend_bedtime INTEGER NOT NULL DEFAULT 0')
     if 'approved_extend_bedtime' not in columns: DB.execute('ALTER TABLE requests ADD COLUMN approved_extend_bedtime INTEGER')
