@@ -1,0 +1,54 @@
+/* Parental: clear surfaces, strong type and quiet, compact navigation. */
+:root{background:#fff;color:#111;--muted:#62666d;--line:#e5e5e5;--mint:#087f46}
+body{background:#fff}h1,h2,h3{color:#111}h1{font-weight:750;letter-spacing:-1.1px}h2{font-weight:700}h3{font-weight:650}
+button{color:#111;border-color:#dedede;border-radius:999px;font-weight:550}button:hover{background:#f2f2f2}
+.primary{background:#111;color:#fff;border-color:#111}.primary:hover{background:#303030}.primary:disabled{background:#555}
+.danger{background:transparent;color:#b4232b;border-color:#efc7c9}.danger:hover{background:#fff3f3}
+.sidebar{background:#fafafa;width:238px;padding:30px 18px;border-color:#eee}.brand{display:flex;align-items:center;gap:10px;margin:0 0 32px;letter-spacing:-.8px}
+.brand img{border-radius:11px}.brand span{color:#111;font-weight:750}.desktop-nav{display:flex;flex-direction:column;gap:5px}
+.nav{display:flex;align-items:center;gap:12px;border-radius:12px;color:#62666d;position:relative}.nav.active{background:#ececec;color:#111;border:0;font-weight:700}
+.nav-icon{width:24px;height:24px;flex-shrink:0}.nav-label{min-width:0}.sidebar-bottom{color:#62666d}.sidebar-bottom button{font-size:12px;width:100%}
+.content{margin-left:238px;max-width:1460px;padding:36px 40px}.eyebrow{letter-spacing:1.3px;font-size:10px}.header-brand-logo{display:none}header h1{margin-bottom:4px}header p{margin-top:6px;font-size:15px}
+.card,.stat,.form-section{background:#fff;border-color:#e5e5e5;box-shadow:none}.card{border-radius:18px}.form-section{border-radius:16px}.stats{gap:12px;margin:24px 0}
+.stat{padding:16px 20px;border-radius:14px;background:#f7f7f7;border:0}.stat strong{font-size:25px;color:#111}.stat small{font-size:12px;color:#62666d}
+input,select,textarea{color:#111;border-color:#d1d1d1;background:#fff;border-radius:10px}input:disabled,select:disabled,textarea:disabled{background:#f5f5f5;color:#62666d}
+input[type=checkbox]{accent-color:#111}.toggle{border-color:#ededed}label.field>span{color:#444}.safe-picker{column-gap:18px}
+.device-icon,.computer{background:#f4f4f4;color:#111;border-radius:12px}.device-icon.icon-laptop,.device-icon.icon-tablet,.device-icon.icon-smartphone,.device-icon.icon-tv,.device-icon.icon-gamepad-2{background:#f4f4f4}
+.device-icon img{filter:grayscale(1) brightness(.2)}.compact-client{padding:20px}.compact-client:hover,.nintendo-card:hover{border-color:#b9b9b9;background:#fdfdfd}
+.compact-client .client-head{margin-bottom:12px}.compact-client h3,.nintendo-card h3{font-size:17px;letter-spacing:-.3px}.compact-client .meta small{color:#767676;font-size:12px}
+.badge{background:#fff3e4;color:#88500b;border-radius:8px;font-size:11px;padding:5px 9px}.allowed{background:#e9f8ee;color:#087443}.neutral{background:#f1f1f1;color:#5b5b5b}
+.compact-exception{background:#effbf3;border-color:#d4eddb;color:#087443;padding:10px 12px}.compact-timer{font-size:17px;font-variant-numeric:tabular-nums}.compact-client .client-status{color:#767676;margin:10px 0 0}
+.compact-favorites{margin-top:12px}.service-logo{background:#f3f3f3;color:#555}.service-logo.category-video{background:#fff1f1;color:#b12b3e}.service-logo.category-social{background:#f2effa;color:#655092}.service-logo.category-games{background:#eef7f0;color:#287b4c}.service-logo.category-shopping{background:#fff6e7;color:#885b18}.service-logo.category-protection{background:#edf4f7;color:#3e6475}
+.compact-warning{background:transparent;color:#89550d;padding:0}.nintendo-group{margin-top:26px}.nintendo-group>p{font-size:13px;margin-bottom:16px}.nintendo-card{padding:20px}
+.nintendo-card .client-head{margin-bottom:12px}.console-budget{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}.console-budget strong{font-size:22px;letter-spacing:-.6px}.console-budget small{font-size:12px}
+.nintendo-detail{font-size:12px;color:#62666d}.nintendo-card .badge{margin-right:6px}.budget{background:#f6f6f6}.nintendo-symbol{background:#f3f3f3;color:#111}
+.notice{background:#f1faf4;border-color:#c8e7d2;color:#17623b}.warning{background:#fff8ec;border-color:#ead1a9;color:#7b5014}.error-notice{background:#fff2f2;border-color:#edbdc0;color:#a92332}
+.nintendo-modal,.adguard-modal,.adguard-modal-heading{background:#fff}.adguard-modal-backdrop,.nintendo-modal-backdrop,.icon-selector{background:#0006}
+.client-tabs .active{background:#111;color:#fff;border-color:#111}.service-category{background:#fafafa;border-color:#e5e5e5}.service-picker label{background:#f2f2f2;color:#111}.favorite-button{color:#777}.favorite-button.is-favorite{color:#8a671b}
+.client-activity>summary,.detected-clients>summary{color:#555}.icon-choice[aria-pressed=true]{border-color:#111;background:#f4f4f4}.icon-selector-panel{border-color:#e5e5e5}
+.client-toolbar{margin-top:28px}.client-toolbar h2{font-size:23px}.client-toolbar .search{background:#f5f5f5;border-color:transparent;border-radius:999px}
+.pending-summary{font-weight:650;color:#111}.request-card{max-width:780px}.request-person{display:flex;align-items:center;gap:10px;margin-bottom:14px}.request-avatar{display:flex;align-items:center;justify-content:center;width:42px;height:42px;border-radius:50%;background:#f0f0f0;color:#111;font-weight:700}
+.request-person-info{flex:1;min-width:0}.request-person-info small{overflow-wrap:anywhere}.request-review{margin-top:18px}.request-time{margin-top:12px}.requests-hint{font-size:13px}body:has(#nintendo-dialog-backdrop),body:has(#install-dialog){overflow:hidden}
+.request-decisions{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}.request-decisions .primary{flex:1 1 100%;min-width:0}.request-card h3{font-size:18px;overflow-wrap:anywhere}.request-card small{display:block}.request-card{overflow-wrap:anywhere}
+.request-count{display:inline-flex;align-items:center;justify-content:center;min-width:21px;height:21px;padding:0 5px;border-radius:999px;background:#111;color:#fff;font-size:11px;font-weight:700;line-height:1;margin-left:auto;font-variant-numeric:tabular-nums}
+.settings-section{max-width:800px}.settings-section>strong{font-size:18px}.settings-section>p{margin:10px 0 16px}.settings-link{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid #ededed;border-radius:0;padding:16px 0;background:transparent;font-weight:500}.settings-link:last-child{border-bottom:0}.settings-link:hover{background:#fafafa}
+.install-icon{width:52px;height:52px;border-radius:14px}.install-identity{display:flex;align-items:center;gap:14px;margin:18px 0}.install-identity p{margin:0}
+.install-banner{display:flex;gap:12px;align-items:center;padding:14px;background:#f6f6f6;border-radius:16px;margin:18px 0}.install-banner img{border-radius:10px;flex-shrink:0}.install-banner>div{flex:1;min-width:0}.install-banner strong{font-size:14px}.install-banner small{display:block;font-size:12px}.install-banner button{padding:8px 14px;font-size:13px}.install-banner [data-dismiss-install]{padding:8px;min-width:32px;font-size:20px}
+.install-backdrop{position:fixed;inset:0;background:#0006;z-index:50;display:flex;align-items:center;justify-content:center;padding:20px}.install-panel{background:#fff;border-radius:24px;max-width:480px;width:100%;padding:28px;max-height:90dvh;overflow:auto}.install-panel h2{margin-top:16px}.install-panel li{margin:10px 0;color:#444}.install-panel button{width:100%;margin-top:12px}
+.mobile-nav{display:none}#message:empty{padding:0}#message{font-size:14px;color:#805419}footer{font-size:11px;line-height:1.6;color:#777;margin-top:28px}
+@media(max-width:1000px) and (min-width:701px){.sidebar{width:205px;padding:25px 12px}.content{margin-left:205px;padding:30px 22px}}
+@media(max-width:700px){
+ .sidebar{display:none}.content{margin:0;padding:calc(24px + env(safe-area-inset-top)) 20px calc(96px + env(safe-area-inset-bottom));max-width:100%}
+ header{min-width:0}header>div:first-child{width:100%;min-width:0}header .eyebrow{display:none}header h1{font-size:32px;letter-spacing:-1px;margin-top:0}header p{font-size:14px;margin-bottom:18px}
+ body[data-page=clients] .header-brand-logo,body[data-page=login] .header-brand-logo{display:inline-block;vertical-align:middle;border-radius:10px;margin-right:8px}body[data-page=clients] header h1,body[data-page=login] header h1{display:inline-block;vertical-align:middle;margin:0}
+ .stats{margin:6px 0 20px;gap:8px}.stat{padding:12px 8px}.stat strong{font-size:22px}.stat small{font-size:10px;line-height:1.3;display:block}
+ .client-toolbar{margin:20px 0 14px;gap:10px}.client-toolbar h2{font-size:20px}.client-toolbar>button{font-size:12px;padding:8px 12px}.client-toolbar .search{order:3;min-width:0;width:100%}
+ .compact-client,.nintendo-card{padding:18px}.compact-client-grid,.nintendo-group .grid{grid-template-columns:minmax(0,1fr)}.compact-client .meta small{max-width:calc(100vw - 155px)}
+ .nintendo-group>p{display:none}.nintendo-group h2{font-size:20px}.nintendo-group .row{margin-bottom:16px}.nintendo-card .client-head{margin-bottom:10px}.console-budget strong{font-size:20px}
+ .mobile-nav{position:fixed;bottom:0;left:0;right:0;z-index:15;display:none;grid-template-columns:repeat(4,minmax(0,1fr));border-top:1px solid #eee;background:#fff;padding:8px 8px calc(8px + env(safe-area-inset-bottom));box-shadow:0 -4px 20px #00000003}
+ body.signed-in .mobile-nav{display:grid}.mobile-nav .nav{flex-direction:column;gap:4px;padding:6px 0;border:0;background:#fff;color:#767676;font-size:10px;border-radius:10px;min-width:0;min-height:50px;text-align:center}.mobile-nav .nav.active{color:#111;font-weight:700}.mobile-nav .nav-icon{width:24px;height:24px}.mobile-nav .request-count{position:absolute;top:0;left:calc(50% + 5px);margin:0;min-width:18px;height:18px;font-size:10px;border:2px solid #fff;box-sizing:content-box}
+ .form-section{padding:18px}.request-card{padding:20px 16px}.request-decisions button{flex:1;min-width:0}.request-card h3{overflow-wrap:anywhere}.settings-section h3{font-size:20px}
+ .adguard-modal,.nintendo-modal{padding:calc(20px + env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom));border-radius:0}.adguard-modal-heading{top:calc(-20px - env(safe-area-inset-top));padding-top:calc(10px + env(safe-area-inset-top))}.client-tabs{position:relative;gap:6px}.client-tabs button{font-size:12px;padding:9px 5px}
+ .install-banner{gap:8px;padding:12px}.install-banner img{width:34px;height:34px}.install-banner strong{font-size:12px}.install-banner small{font-size:11px}.install-banner button{padding:8px 10px;font-size:12px}.install-banner [data-dismiss-install]{min-width:26px;padding:8px 3px}
+ .install-backdrop{padding:16px}.install-panel{padding:24px 20px}.install-panel h2{font-size:24px}#login{margin:24px 0}.content header .actions{display:none}
+}
