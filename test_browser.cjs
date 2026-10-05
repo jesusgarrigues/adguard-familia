@@ -225,7 +225,7 @@ const calls=[];let adguardDown=false,clientFailure=null,readFailures=0,saveDelay
  await page.locator('#nintendo-dialog-backdrop').getByRole('button',{name:'Cerrar',exact:true}).click();
  await page.evaluate(()=>{me={...me,role:'responsable',edit_policy:false,max_minutes:30};go('requests')});
  await page.locator('#review-bedtime-1').waitFor();assert.equal(await page.locator('#review-bedtime-1').isChecked(),false);
- await page.evaluate(()=>{me={...me,max_minutes:35};go('requests')});await page.locator('#review-1').waitFor();assert.equal(await page.locator('#review-1').inputValue(),'20');
+ requests[0].minutes=40;await page.evaluate(()=>{me={...me,max_minutes:35};go('requests')});await page.locator('#review-1').waitFor();assert.equal(await page.locator('#review-1').inputValue(),'30');assert.ok(await page.getByRole('button',{name:'Aprobar 30 min',exact:true}).isVisible());requests[0].minutes=20;await page.evaluate(()=>go('requests'));await page.locator('#review-1').waitFor();
  await page.locator('#review-bedtime-1').check();const beforeDraft=await page.locator('#review-1').inputValue();
  await page.evaluate(()=>refreshPendingCount());
  assert.equal(await page.locator('#review-bedtime-1').isChecked(),true);assert.equal(await page.locator('#review-1').inputValue(),beforeDraft);
