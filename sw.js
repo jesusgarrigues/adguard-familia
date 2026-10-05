@@ -1,15 +1,20 @@
 // Only allowlisted public assets are cached. Accounts, API responses and HTML are never cached.
-const CACHE = 'parental-static-v1';
+const CACHE = 'parental-static-v2';
+importScripts('/assets/notification-targets.js');
 const PUBLIC = new Set([
   '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png', '/favicon.png', '/icon.svg',
   '/assets/app.css', '/assets/parental.css', '/assets/app-shell.js', '/assets/client-settings.js', '/assets/fonts/InterVariable.woff2',
+  '/assets/identity.js', '/assets/notifications.js', '/assets/service-logos.js',
+  '/assets/notification-targets.js', '/assets/app-badges.js',
+  ...Array.from({length:12},(_,i)=>'/assets/avatars/face-'+String(i+1).padStart(2,'0')+'.svg'),
+  ...["4chan","500px","9gag","activision_blizzard","aliexpress","amazon","amazon_streaming","amino","apple_streaming","battle_net","betano","betfair","betway","bigo_live","bilibili","blaze","blizzard_entertainment","bluesky","box","canais_globo","chatgpt","claro","claude","cloudflare","clubhouse","coolapk","copilot","crunchyroll","dailymotion","deepseek","deezer","directvgo","discord","discoveryplus","disneyplus","dola","douban","dropbox","ebay","electronic_arts","epic_games","espn","facebook","fdj_united","fifa","flickr","gemini","globoplay","gog","grindr","grok","hbomax","hulu","icloud_private_relay","iheartradio","imgur","instagram","io_interactive","iqiyi","kakaotalk","kik","kook","lazada","leagueoflegends","line","linkedin","lionsgateplus","looke","mail_ru","manus","mastodon","max","mercado_libre","meta_ai","microsoft_teams","minecraft","nebula","netflix","nintendo","nvidia","odysee","ok","olvid","onlyfans","origin","paramountplus","peacock_tv","perplexity","pinterest","playstation","playstore","plenty_of_fish","plex","pluto_tv","privacy","proton","qq","questionai","qwen","rakuten_viki","reddit","riot_games","roblox","rockstar_games","samsung_tv_plus","shein","shell_shockers","shopee","signal","skype","slack","snapchat","soundcloud","spotify","spotify_video","steam","telegram","temu","tidal","tiktok","tinder","tumblr","twitch","twitter","ubisoft","valorant","viber","vimeo","vivo_play","vk","voot","wargaming","warnerbrosgames","wechat","weibo","whatsapp","wizz","xboxlive","xiaohongshu","youtube","yy","zhihu"].map(id=>'/assets/services/'+id+'.svg'),
   ...['monitor','laptop','smartphone','tablet','gamepad-2','tv','router','printer','speaker','headphones','watch','server'].map(id => '/assets/icons/' + id + '.svg')
 ]);
 const OFFLINE = '<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#ffffff"><title>Parental · Sin conexión</title><style>body{font-family:system-ui,sans-serif;padding:56px 24px;max-width:440px;margin:auto;color:#111}img{width:64px;border-radius:16px}h1{font-size:30px;letter-spacing:-1px}p{color:#62666d;line-height:1.6}button{background:#111;color:#fff;border:0;border-radius:99px;padding:14px 24px;font:inherit}</style><img src="/apple-touch-icon.png" alt=""><h1>Sin conexión</h1><p>Conecta con tu servidor para consultar tus clientes, solicitudes y permisos.</p><button onclick="location.reload()">Volver a intentar</button></html>';
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
-    await Promise.allSettled([...PUBLIC].map(async path => {
+    await Promise.allSettled([...PUBLIC].filter(path=>!path.startsWith('/assets/services/')).map(async path => {
       const response = await fetch(path, {cache: 'reload', credentials: 'omit'});
       if (response.ok && !response.redirected) await cache.put(path, response);
     }));
@@ -37,5 +42,18 @@ self.addEventListener('fetch', event => {
     } catch {
       return await cache.match(url.pathname) || Response.error();
     }
+  })());
+});
+// Clicking an alert only opens a view; decisions still require authentication and CSRF.
+self.addEventListener('notificationclick',event=>{
+  event.notification.close();
+  const target=ParentalTargets.normalize(event.notification.data?.target);
+  const path=target?ParentalTargets.url(target):event.notification.data?.url==='/?view=requests'?'/?view=requests':'/';
+  event.waitUntil((async()=>{
+    const windows=await self.clients.matchAll({type:'window',includeUncontrolled:true});
+    const own=windows.filter(client=>new URL(client.url).origin===self.location.origin);
+    const client=own.find(c=>c.visibilityState==='visible')||own[0];
+    if(client){client.postMessage({type:'parental:navigate',target,view:path==='/'?'clients':'requests'});return client.focus();}
+    return self.clients.openWindow(new URL(path,self.location.origin).href);
   })());
 });

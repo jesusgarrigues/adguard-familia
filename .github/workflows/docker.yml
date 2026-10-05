@@ -32,13 +32,20 @@ jobs:
           node --check /tmp/frontend.js
           node --check assets/client-settings.js
           node --check assets/app-shell.js
+          node --check assets/identity.js
+          node --check assets/notifications.js
+          node --check assets/notification-targets.js
+          node --check assets/app-badges.js
+          node --check assets/service-logos.js
           node --check sw.js
           node test_ui.cjs
           node test_pwa.cjs
+          node test_notifications.cjs
+          node test_badges_targets.cjs
       - name: Verify desktop and mobile controls in a browser
         run: |
           npm install --prefix /tmp/adguard-browser-deps --no-save playwright@1.62.1
-          NODE_PATH=/tmp/adguard-browser-deps/node_modules timeout 90s node test_browser.cjs
+          NODE_PATH=/tmp/adguard-browser-deps/node_modules timeout 120s node test_browser.cjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:

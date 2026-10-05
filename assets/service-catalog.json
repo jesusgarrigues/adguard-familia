@@ -1,0 +1,1139 @@
+{
+  "4chan": {
+    "name": "4chan",
+    "color": "#006600",
+    "group": "social_network",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/4chan.yml",
+    "palette_source": "https://www.4chan.org",
+    "palette_provider": "Simple Icons"
+  },
+  "500px": {
+    "name": "500px",
+    "color": "#222222",
+    "group": "social_network",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/500px.yml",
+    "palette_source": "https://500px.com",
+    "palette_provider": "Simple Icons"
+  },
+  "9gag": {
+    "name": "9GAG",
+    "color": "#000000",
+    "group": "social_network",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/9gag.yml",
+    "palette_source": "https://commons.wikimedia.org/wiki/File:9gag_logo.svg",
+    "palette_provider": "Simple Icons"
+  },
+  "activision_blizzard": {
+    "name": "Activision Blizzard",
+    "color": "#000000",
+    "group": "gaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/activision_blizzard.yml",
+    "palette_source": "https://www.activision.com",
+    "palette_provider": "Simple Icons"
+  },
+  "aliexpress": {
+    "name": "AliExpress",
+    "color": "#FF4747",
+    "group": "shopping",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/aliexpress.yml",
+    "palette_source": "https://www.alibabagroup.com/en/ir/reports",
+    "palette_provider": "Simple Icons"
+  },
+  "amazon": {
+    "name": "Amazon",
+    "color": "#FF9900",
+    "group": "shopping",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/amazon.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "amazon_streaming": {
+    "name": "Amazon Streaming",
+    "color": "#00A8E1",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/amazon_streaming.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "amino": {
+    "name": "Amino",
+    "color": "#00D5C6",
+    "group": "social_network",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/amino.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "apple_streaming": {
+    "name": "Apple Streaming",
+    "color": "#000000",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/apple_streaming.yml",
+    "palette_source": "https://en.wikipedia.org/wiki/File:Apple_TV_(logo).svg",
+    "palette_provider": "Simple Icons"
+  },
+  "battle_net": {
+    "name": "Battle.net",
+    "color": "#4381C3",
+    "group": "gaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/battle_net.yml",
+    "palette_source": "https://battle.net",
+    "palette_provider": "Simple Icons"
+  },
+  "betano": {
+    "name": "Betano",
+    "color": "#F15A24",
+    "group": "gambling",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/betano.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "betfair": {
+    "name": "Betfair",
+    "color": "#FFB80B",
+    "group": "gambling",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/betfair.yml",
+    "palette_source": "https://www.betfair.com",
+    "palette_provider": "Simple Icons"
+  },
+  "betway": {
+    "name": "Betway",
+    "color": "#00A826",
+    "group": "gambling",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/betway.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "bigo_live": {
+    "name": "Bigo Live",
+    "color": "#12CEB1",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/bigo_live.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "bilibili": {
+    "name": "Bilibili",
+    "color": "#00A1D6",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/bilibili.yml",
+    "palette_source": "https://www.bilibili.com",
+    "palette_provider": "Simple Icons"
+  },
+  "blaze": {
+    "name": "Blaze",
+    "color": "#F12C4C",
+    "group": "gambling",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/blaze.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "blizzard_entertainment": {
+    "name": "Blizzard Entertainment",
+    "color": "#0088CC",
+    "group": "gaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/blizzard_entertainment.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "bluesky": {
+    "name": "Bluesky",
+    "color": "#1185FE",
+    "group": "social_network",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/bluesky.yml",
+    "palette_source": "https://bsky.social/about/blog/press-faq",
+    "palette_provider": "Simple Icons"
+  },
+  "box": {
+    "name": "Box",
+    "color": "#0061D5",
+    "group": "hosting",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/box.yml",
+    "palette_source": "https://www.box.com/en-gb/about-us/press",
+    "palette_provider": "Simple Icons"
+  },
+  "canais_globo": {
+    "name": "Canais Globo",
+    "color": "#ED1C24",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/canais_globo.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "chatgpt": {
+    "name": "ChatGPT",
+    "color": "#10A37F",
+    "group": "ai",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/chatgpt.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "claro": {
+    "name": "Claro",
+    "color": "#DA291C",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/claro.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "claude": {
+    "name": "Claude",
+    "color": "#D97757",
+    "group": "ai",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/claude.yml",
+    "palette_source": "https://claude.ai",
+    "palette_provider": "Simple Icons"
+  },
+  "cloudflare": {
+    "name": "Cloudflare",
+    "color": "#F38020",
+    "group": "cdn",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/cloudflare.yml",
+    "palette_source": "https://www.cloudflare.com/logo/",
+    "palette_provider": "Simple Icons"
+  },
+  "clubhouse": {
+    "name": "Clubhouse",
+    "color": "#FFE450",
+    "group": "social_network",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/clubhouse.yml",
+    "palette_source": "https://www.clubhouse.com/press",
+    "palette_provider": "Simple Icons"
+  },
+  "coolapk": {
+    "name": "CoolApk",
+    "color": "#11A66B",
+    "group": "shopping",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/coolapk.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "copilot": {
+    "name": "Copilot",
+    "color": "#0078D4",
+    "group": "ai",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/copilot.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "crunchyroll": {
+    "name": "Crunchyroll",
+    "color": "#FF5E00",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/crunchyroll.yml",
+    "palette_source": "https://www.crunchyroll.com",
+    "palette_provider": "Simple Icons"
+  },
+  "dailymotion": {
+    "name": "Dailymotion",
+    "color": "#0A0A0A",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/dailymotion.yml",
+    "palette_source": "https://careers.dailymotion.com",
+    "palette_provider": "Simple Icons"
+  },
+  "deepseek": {
+    "name": "DeepSeek",
+    "color": "#5786FE",
+    "group": "ai",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/deepseek.yml",
+    "palette_source": "https://www.deepseek.com",
+    "palette_provider": "Simple Icons"
+  },
+  "deezer": {
+    "name": "Deezer",
+    "color": "#A238FF",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/deezer.yml",
+    "palette_source": "https://deezerbrand.com/document/37#/-/logo",
+    "palette_provider": "Simple Icons"
+  },
+  "directvgo": {
+    "name": "DirecTV Go",
+    "color": "#00A8E0",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/directvgo.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "discord": {
+    "name": "Discord",
+    "color": "#5865F2",
+    "group": "social_network",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/discord.yml",
+    "palette_source": "https://discord.com/branding",
+    "palette_provider": "Simple Icons"
+  },
+  "discoveryplus": {
+    "name": "Discovery+",
+    "color": "#0054A6",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/discoveryplus.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "disneyplus": {
+    "name": "Disney+",
+    "color": "#0057B8",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/disneyplus.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "dola": {
+    "name": "Dola",
+    "color": "#6C5CE7",
+    "group": "ai",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/dola.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "douban": {
+    "name": "Douban",
+    "color": "#2D963D",
+    "group": "social_network",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/douban.yml",
+    "palette_source": "https://www.douban.com/about",
+    "palette_provider": "Simple Icons"
+  },
+  "dropbox": {
+    "name": "Dropbox",
+    "color": "#0061FF",
+    "group": "hosting",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/dropbox.yml",
+    "palette_source": "https://www.dropbox.com/branding",
+    "palette_provider": "Simple Icons"
+  },
+  "ebay": {
+    "name": "eBay",
+    "color": "#E53238",
+    "group": "shopping",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/ebay.yml",
+    "palette_source": "https://go.developer.ebay.com/logos",
+    "palette_provider": "Simple Icons"
+  },
+  "electronic_arts": {
+    "name": "Electronic Arts",
+    "color": "#000000",
+    "group": "gaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/electronic_arts.yml",
+    "palette_source": "https://www.ea.com",
+    "palette_provider": "Simple Icons"
+  },
+  "epic_games": {
+    "name": "Epic Games",
+    "color": "#313131",
+    "group": "gaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/epic_games.yml",
+    "palette_source": "https://dev.epicgames.com/docs/services/en-US/EpicAccountServices/DesignGuidelines/index.html#epicgamesbrandguidelines",
+    "palette_provider": "Simple Icons"
+  },
+  "espn": {
+    "name": "ESPN",
+    "color": "#E52534",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/espn.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "facebook": {
+    "name": "Facebook",
+    "color": "#0866FF",
+    "group": "social_network",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/facebook.yml",
+    "palette_source": "https://about.meta.com/brand/resources/facebook/logo",
+    "palette_provider": "Simple Icons"
+  },
+  "fdj_united": {
+    "name": "FDJ United",
+    "color": "#0057B8",
+    "group": "gambling",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/fdj_united.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "fifa": {
+    "name": "FIFA",
+    "color": "#326295",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/fifa.yml",
+    "palette_source": "https://en.wikipedia.org/wiki/FIFA",
+    "palette_provider": "Simple Icons"
+  },
+  "flickr": {
+    "name": "Flickr",
+    "color": "#0063DC",
+    "group": "hosting",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/flickr.yml",
+    "palette_source": "https://www.flickr.com",
+    "palette_provider": "Simple Icons"
+  },
+  "gemini": {
+    "name": "Google Gemini",
+    "color": "#8E75B2",
+    "group": "ai",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/gemini.yml",
+    "palette_source": "https://gemini.google.com",
+    "palette_provider": "Simple Icons"
+  },
+  "globoplay": {
+    "name": "Globoplay",
+    "color": "#FB0333",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/globoplay.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "gog": {
+    "name": "GOG",
+    "color": "#86328A",
+    "group": "gaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/gog.yml",
+    "palette_source": "https://www.cdprojekt.com/en/media/logotypes/",
+    "palette_provider": "Simple Icons"
+  },
+  "grindr": {
+    "name": "Grindr",
+    "color": "#FFCC00",
+    "group": "dating",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/grindr.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "grok": {
+    "name": "Grok",
+    "color": "#111111",
+    "group": "ai",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/grok.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "hbomax": {
+    "name": "HBO Max",
+    "color": "#000000",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/hbomax.yml",
+    "palette_source": "https://commons.wikimedia.org/wiki/File:Max_2025_logo.svg",
+    "palette_provider": "Simple Icons"
+  },
+  "hulu": {
+    "name": "Hulu",
+    "color": "#1CE783",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/hulu.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "icloud_private_relay": {
+    "name": "iCloud Private Relay",
+    "color": "#3693F3",
+    "group": "privacy",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/icloud_private_relay.yml",
+    "palette_source": "https://commons.wikimedia.org/wiki/File:ICloud_logo.svg",
+    "palette_provider": "Simple Icons"
+  },
+  "iheartradio": {
+    "name": "iHeartRadio",
+    "color": "#C6002B",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/iheartradio.yml",
+    "palette_source": "https://brand.iheart.com/logo",
+    "palette_provider": "Simple Icons"
+  },
+  "imgur": {
+    "name": "Imgur",
+    "color": "#1BB76E",
+    "group": "hosting",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/imgur.yml",
+    "palette_source": "https://imgurinc.com/press",
+    "palette_provider": "Simple Icons"
+  },
+  "instagram": {
+    "name": "Instagram",
+    "color": "#FF0069",
+    "group": "social_network",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/instagram.yml",
+    "palette_source": "https://about.meta.com/brand/resources/instagram",
+    "palette_provider": "Simple Icons"
+  },
+  "io_interactive": {
+    "name": "IO Interactive",
+    "color": "#E63135",
+    "group": "gaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/io_interactive.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "iqiyi": {
+    "name": "iQIYI",
+    "color": "#00CC4C",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/iqiyi.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "kakaotalk": {
+    "name": "KakaoTalk",
+    "color": "#FFCD00",
+    "group": "messenger",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/kakaotalk.yml",
+    "palette_source": "https://commons.wikimedia.org/wiki/File:KakaoTalk_logo.svg",
+    "palette_provider": "Simple Icons"
+  },
+  "kik": {
+    "name": "Kik",
+    "color": "#82BC23",
+    "group": "messenger",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/kik.yml",
+    "palette_source": "https://www.kik.com/news/",
+    "palette_provider": "Simple Icons"
+  },
+  "kook": {
+    "name": "KOOK",
+    "color": "#7C5CFC",
+    "group": "social_network",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/kook.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "lazada": {
+    "name": "Lazada",
+    "color": "#F57224",
+    "group": "shopping",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/lazada.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "leagueoflegends": {
+    "name": "League of Legends",
+    "color": "#C28F2C",
+    "group": "gaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/leagueoflegends.yml",
+    "palette_source": "https://www.leagueoflegends.com",
+    "palette_provider": "Simple Icons"
+  },
+  "line": {
+    "name": "LINE",
+    "color": "#00C300",
+    "group": "social_network",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/line.yml",
+    "palette_source": "https://line.me/en/logo",
+    "palette_provider": "Simple Icons"
+  },
+  "linkedin": {
+    "name": "LinkedIn",
+    "color": "#0A66C2",
+    "group": "social_network",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/linkedin.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "lionsgateplus": {
+    "name": "Lionsgate+",
+    "color": "#151515",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/lionsgateplus.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "looke": {
+    "name": "Looke",
+    "color": "#FFB600",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/looke.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "mail_ru": {
+    "name": "Mail.ru",
+    "color": "#005FF9",
+    "group": "social_network",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/mail_ru.yml",
+    "palette_source": "https://my.mail.ru",
+    "palette_provider": "Simple Icons"
+  },
+  "manus": {
+    "name": "Manus",
+    "color": "#171717",
+    "group": "ai",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/manus.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "mastodon": {
+    "name": "Mastodon",
+    "color": "#6364FF",
+    "group": "social_network",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/mastodon.yml",
+    "palette_source": "https://github.com/mastodon/mastodon/blob/7ccf7a73f1c47a8c03712c39f7c591e837cf6d08/app/javascript/images/logo-symbol-icon.svg",
+    "palette_provider": "Simple Icons"
+  },
+  "max": {
+    "name": "MAX",
+    "color": "#525252",
+    "group": "messenger",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/max.yml",
+    "palette_source": "https://cycling74.com",
+    "palette_provider": "Simple Icons"
+  },
+  "mercado_libre": {
+    "name": "Mercado Libre",
+    "color": "#FFE600",
+    "group": "shopping",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/mercado_libre.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "meta_ai": {
+    "name": "Meta AI",
+    "color": "#9844FF",
+    "group": "ai",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/meta_ai.yml",
+    "palette_source": "https://meta.ai/images/meta-ai-orbit-logo-gradient-3d_light.svg",
+    "palette_provider": "Simple Icons"
+  },
+  "microsoft_teams": {
+    "name": "Microsoft Teams",
+    "color": "#6264A7",
+    "group": "messenger",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/microsoft_teams.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "minecraft": {
+    "name": "Minecraft",
+    "color": "#62B47A",
+    "group": "gaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/minecraft.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "nebula": {
+    "name": "Nebula",
+    "color": "#2CADFE",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/nebula.yml",
+    "palette_source": "https://nebula.tv",
+    "palette_provider": "Simple Icons"
+  },
+  "netflix": {
+    "name": "Netflix",
+    "color": "#E50914",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/netflix.yml",
+    "palette_source": "https://brand.netflix.com/en/assets/logos",
+    "palette_provider": "Simple Icons"
+  },
+  "nintendo": {
+    "name": "Nintendo",
+    "color": "#E60012",
+    "group": "gaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/nintendo.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "nvidia": {
+    "name": "Nvidia",
+    "color": "#76B900",
+    "group": "software",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/nvidia.yml",
+    "palette_source": "https://www.nvidia.com/en-us",
+    "palette_provider": "Simple Icons"
+  },
+  "odysee": {
+    "name": "Odysee",
+    "color": "#EF1970",
+    "group": "social_network",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/odysee.yml",
+    "palette_source": "https://odysee.com/@OdyseeHelp:b/odyseepresskit:b",
+    "palette_provider": "Simple Icons"
+  },
+  "ok": {
+    "name": "OK.ru",
+    "color": "#EE8208",
+    "group": "social_network",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/ok.yml",
+    "palette_source": "https://insideok.ru/brandbook",
+    "palette_provider": "Simple Icons"
+  },
+  "olvid": {
+    "name": "Olvid",
+    "color": "#EA5B25",
+    "group": "messenger",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/olvid.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "onlyfans": {
+    "name": "OnlyFans",
+    "color": "#00AFF0",
+    "group": "social_network",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/onlyfans.yml",
+    "palette_source": "https://onlyfans.com/brand",
+    "palette_provider": "Simple Icons"
+  },
+  "origin": {
+    "name": "Origin",
+    "color": "#F56C2D",
+    "group": "gaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/origin.yml",
+    "palette_source": "https://www.origin.com/gbr/en-us/store",
+    "palette_provider": "Simple Icons"
+  },
+  "paramountplus": {
+    "name": "Paramount Plus",
+    "color": "#0064FF",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/paramountplus.yml",
+    "palette_source": "https://www.paramount.com/brand/paramount-plus",
+    "palette_provider": "Simple Icons"
+  },
+  "peacock_tv": {
+    "name": "Peacock TV",
+    "color": "#111111",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/peacock_tv.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "perplexity": {
+    "name": "Perplexity",
+    "color": "#1FB8CD",
+    "group": "ai",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/perplexity.yml",
+    "palette_source": "https://www.perplexity.ai",
+    "palette_provider": "Simple Icons"
+  },
+  "pinterest": {
+    "name": "Pinterest",
+    "color": "#BD081C",
+    "group": "social_network",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/pinterest.yml",
+    "palette_source": "https://business.pinterest.com/en/brand-guidelines",
+    "palette_provider": "Simple Icons"
+  },
+  "playstation": {
+    "name": "PlayStation",
+    "color": "#0070D1",
+    "group": "gaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/playstation.yml",
+    "palette_source": "https://www.playstation.com/en-us/",
+    "palette_provider": "Simple Icons"
+  },
+  "playstore": {
+    "name": "Google Play Store",
+    "color": "#414141",
+    "group": "software",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/playstore.yml",
+    "palette_source": "https://partnermarketinghub.withgoogle.com/brands/google-play/visual-identity/primary-logos/",
+    "palette_provider": "Simple Icons"
+  },
+  "plenty_of_fish": {
+    "name": "Plenty of Fish",
+    "color": "#00A8E0",
+    "group": "dating",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/plenty_of_fish.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "plex": {
+    "name": "Plex",
+    "color": "#EBAF00",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/plex.yml",
+    "palette_source": "https://brand.plex.tv",
+    "palette_provider": "Simple Icons"
+  },
+  "pluto_tv": {
+    "name": "Pluto TV",
+    "color": "#111111",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/pluto_tv.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "privacy": {
+    "name": "Privacy",
+    "color": "#4A6CF7",
+    "group": "privacy",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/privacy.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "proton": {
+    "name": "Proton",
+    "color": "#6D4AFF",
+    "group": "privacy",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/proton.yml",
+    "palette_source": "https://proton.me/media/kit",
+    "palette_provider": "Simple Icons"
+  },
+  "qq": {
+    "name": "QQ",
+    "color": "#1EBAFC",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/qq.yml",
+    "palette_source": "https://en.wikipedia.org/wiki/File:Tencent_QQ.svg",
+    "palette_provider": "Simple Icons"
+  },
+  "questionai": {
+    "name": "QuestionAI",
+    "color": "#7269EF",
+    "group": "ai",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/questionai.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "qwen": {
+    "name": "Qwen",
+    "color": "#6950EF",
+    "group": "ai",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/qwen.yml",
+    "palette_source": "https://qwen.ai",
+    "palette_provider": "Simple Icons"
+  },
+  "rakuten_viki": {
+    "name": "Rakuten Viki",
+    "color": "#00B9F1",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/rakuten_viki.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "reddit": {
+    "name": "Reddit",
+    "color": "#FF4500",
+    "group": "social_network",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/reddit.yml",
+    "palette_source": "https://www.redditinc.com/brand",
+    "palette_provider": "Simple Icons"
+  },
+  "riot_games": {
+    "name": "Riot Games",
+    "color": "#EB0029",
+    "group": "gaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/riot_games.yml",
+    "palette_source": "https://www.riotgames.com/en/press",
+    "palette_provider": "Simple Icons"
+  },
+  "roblox": {
+    "name": "Roblox",
+    "color": "#000000",
+    "group": "gaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/roblox.yml",
+    "palette_source": "https://www.roblox.com",
+    "palette_provider": "Simple Icons"
+  },
+  "rockstar_games": {
+    "name": "Rockstar Games",
+    "color": "#FCAF17",
+    "group": "gaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/rockstar_games.yml",
+    "palette_source": "https://www.rockstargames.com",
+    "palette_provider": "Simple Icons"
+  },
+  "samsung_tv_plus": {
+    "name": "Samsung TV Plus",
+    "color": "#1428A0",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/samsung_tv_plus.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "shein": {
+    "name": "Shein",
+    "color": "#111111",
+    "group": "shopping",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/shein.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "shell_shockers": {
+    "name": "Shell Shockers",
+    "color": "#EDAF39",
+    "group": "gaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/shell_shockers.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "shopee": {
+    "name": "Shopee",
+    "color": "#EE4D2D",
+    "group": "shopping",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/shopee.yml",
+    "palette_source": "https://shopee.com",
+    "palette_provider": "Simple Icons"
+  },
+  "signal": {
+    "name": "Signal",
+    "color": "#3B45FD",
+    "group": "messenger",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/signal.yml",
+    "palette_source": "https://signal.org/brand",
+    "palette_provider": "Simple Icons"
+  },
+  "skype": {
+    "name": "Skype",
+    "color": "#00AFF0",
+    "group": "messenger",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/skype.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "slack": {
+    "name": "Slack",
+    "color": "#4A154B",
+    "group": "messenger",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/slack.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "snapchat": {
+    "name": "Snapchat",
+    "color": "#FFFC00",
+    "group": "social_network",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/snapchat.yml",
+    "palette_source": "https://www.snapchat.com/brand-guidelines",
+    "palette_provider": "Simple Icons"
+  },
+  "soundcloud": {
+    "name": "SoundCloud",
+    "color": "#FF5500",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/soundcloud.yml",
+    "palette_source": "https://press.soundcloud.com",
+    "palette_provider": "Simple Icons"
+  },
+  "spotify": {
+    "name": "Spotify",
+    "color": "#1ED760",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/spotify.yml",
+    "palette_source": "https://developer.spotify.com/documentation/general/design-and-branding/#using-our-logo",
+    "palette_provider": "Simple Icons"
+  },
+  "spotify_video": {
+    "name": "Spotify Video",
+    "color": "#1ED760",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/spotify_video.yml",
+    "palette_source": "https://developer.spotify.com/documentation/general/design-and-branding/#using-our-logo",
+    "palette_provider": "Simple Icons"
+  },
+  "steam": {
+    "name": "Steam",
+    "color": "#000000",
+    "group": "gaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/steam.yml",
+    "palette_source": "https://partner.steamgames.com/doc/marketing/branding",
+    "palette_provider": "Simple Icons"
+  },
+  "telegram": {
+    "name": "Telegram (Web)",
+    "color": "#26A5E4",
+    "group": "messenger",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/telegram.yml",
+    "palette_source": "https://telegram.org/tour/screenshots",
+    "palette_provider": "Simple Icons"
+  },
+  "temu": {
+    "name": "Temu",
+    "color": "#FB7701",
+    "group": "shopping",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/temu.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "tidal": {
+    "name": "Tidal",
+    "color": "#000000",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/tidal.yml",
+    "palette_source": "https://tidal.com/press",
+    "palette_provider": "Simple Icons"
+  },
+  "tiktok": {
+    "name": "TikTok",
+    "color": "#000000",
+    "group": "social_network",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/tiktok.yml",
+    "palette_source": "https://tiktok.com",
+    "palette_provider": "Simple Icons"
+  },
+  "tinder": {
+    "name": "Tinder",
+    "color": "#FF6B6B",
+    "group": "dating",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/tinder.yml",
+    "palette_source": "https://www.gotinder.com/press",
+    "palette_provider": "Simple Icons"
+  },
+  "tumblr": {
+    "name": "Tumblr",
+    "color": "#36465D",
+    "group": "social_network",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/tumblr.yml",
+    "palette_source": "https://www.tumblr.com/logo",
+    "palette_provider": "Simple Icons"
+  },
+  "twitch": {
+    "name": "Twitch",
+    "color": "#9146FF",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/twitch.yml",
+    "palette_source": "https://brand.twitch.tv",
+    "palette_provider": "Simple Icons"
+  },
+  "twitter": {
+    "name": "X (formerly Twitter)",
+    "color": "#000000",
+    "group": "social_network",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/twitter.yml",
+    "palette_source": "https://x.com",
+    "palette_provider": "Simple Icons"
+  },
+  "ubisoft": {
+    "name": "Ubisoft",
+    "color": "#000000",
+    "group": "gaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/ubisoft.yml",
+    "palette_source": "https://www.ubisoft.com/en-US/company/overview.aspx",
+    "palette_provider": "Simple Icons"
+  },
+  "valorant": {
+    "name": "Valorant",
+    "color": "#FA4454",
+    "group": "gaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/valorant.yml",
+    "palette_source": "https://commons.wikimedia.org/wiki/File:Valorant_logo_-_black_color_version.svg",
+    "palette_provider": "Simple Icons"
+  },
+  "viber": {
+    "name": "Viber",
+    "color": "#7360F2",
+    "group": "messenger",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/viber.yml",
+    "palette_source": "https://www.viber.com/brand-center",
+    "palette_provider": "Simple Icons"
+  },
+  "vimeo": {
+    "name": "Vimeo",
+    "color": "#1AB7EA",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/vimeo.yml",
+    "palette_source": "https://press.vimeo.com/brand-guidelines",
+    "palette_provider": "Simple Icons"
+  },
+  "vivo_play": {
+    "name": "Vivo Play",
+    "color": "#660099",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/vivo_play.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "vk": {
+    "name": "VK.com",
+    "color": "#0077FF",
+    "group": "social_network",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/vk.yml",
+    "palette_source": "https://vk.com/brand",
+    "palette_provider": "Simple Icons"
+  },
+  "voot": {
+    "name": "Voot",
+    "color": "#6F20D8",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/voot.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "wargaming": {
+    "name": "Wargaming",
+    "color": "#EF1C25",
+    "group": "gaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/wargaming.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "warnerbrosgames": {
+    "name": "Warner Bros. Games",
+    "color": "#004DB4",
+    "group": "gaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/warnerbrosgames.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "wechat": {
+    "name": "WeChat",
+    "color": "#07C160",
+    "group": "messenger",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/wechat.yml",
+    "palette_source": "https://wechat.design/tool/brand",
+    "palette_provider": "Simple Icons"
+  },
+  "weibo": {
+    "name": "Weibo",
+    "color": "#E6162D",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/weibo.yml",
+    "palette_source": "https://en.wikipedia.org/wiki/Sina_Weibo",
+    "palette_provider": "Simple Icons"
+  },
+  "whatsapp": {
+    "name": "WhatsApp",
+    "color": "#25D366",
+    "group": "messenger",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/whatsapp.yml",
+    "palette_source": "https://about.meta.com/brand/resources/whatsapp/whatsapp-brand",
+    "palette_provider": "Simple Icons"
+  },
+  "wizz": {
+    "name": "Wizz",
+    "color": "#75D873",
+    "group": "dating",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/wizz.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "xboxlive": {
+    "name": "Xbox Live",
+    "color": "#107C10",
+    "group": "gaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/xboxlive.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "xiaohongshu": {
+    "name": "Xiaohongshu",
+    "color": "#FF2442",
+    "group": "shopping",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/xiaohongshu.yml",
+    "palette_source": "https://pro.xiaohongshu.com",
+    "palette_provider": "Simple Icons"
+  },
+  "youtube": {
+    "name": "YouTube",
+    "color": "#FF0000",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/youtube.yml",
+    "palette_source": "https://www.youtube.com/howyoutubeworks/resources/brand-resources/#logos-icons-and-colors",
+    "palette_provider": "Simple Icons"
+  },
+  "yy": {
+    "name": "YY",
+    "color": "#FFA800",
+    "group": "streaming",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/yy.yml",
+    "palette_source": "Identidad visual del servicio; paleta seleccionada para el panel",
+    "palette_provider": "Parental"
+  },
+  "zhihu": {
+    "name": "Zhihu",
+    "color": "#0084FF",
+    "group": "social_network",
+    "source": "https://github.com/AdguardTeam/HostlistsRegistry/blob/19e7e0ac9705fc9ad261d8cf6645ce59f4ee94cb/services/zhihu.yml",
+    "palette_source": "https://www.zhihu.com",
+    "palette_provider": "Simple Icons"
+  }
+}
+

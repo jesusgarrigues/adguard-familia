@@ -1,18 +1,1 @@
-<svg
-  xmlns="http://www.w3.org/2000/svg"
-  width="24"
-  height="24"
-  viewBox="0 0 24 24"
-  fill="none"
-  stroke="#0f766e"
-  stroke-width="2"
-  stroke-linecap="round"
-  stroke-linejoin="round"
->
-  <rect width="20" height="8" x="2" y="14" rx="2" />
-  <path d="M6.01 18H6" />
-  <path d="M10.01 18H10" />
-  <path d="M15 10v4" />
-  <path d="M17.84 7.17a4 4 0 0 0-5.66 0" />
-  <path d="M20.66 4.34a8 8 0 0 0-11.31 0" />
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96"><defs><linearGradient id="paint" x2=".8" y2="1"><stop stop-color="#BAB2FF"/><stop offset="1" stop-color="#7269DB"/></linearGradient><linearGradient id="metal" x2="0" y2="1"><stop stop-color="#F1F5FC"/><stop offset="1" stop-color="#AAB8D0"/></linearGradient><linearGradient id="screen" x2="1" y2="1"><stop stop-color="#74E4FF"/><stop offset="1" stop-color="#4B5DED"/></linearGradient></defs><ellipse cx="48" cy="83" rx="32" ry="5" fill="#14294D" opacity=".12"/><path d="M23 47V15M73 47V15" stroke="#7587CD" stroke-width="6" stroke-linecap="round"/><path d="M22 44h52l12 19v13H10V63z" fill="url(#paint)"/><path d="M22 44h52l12 19H10z" fill="#BDB9FF"/><rect x="10" y="64" width="76" height="14" rx="5" fill="#6962C5"/><g fill="#6CF6CE"><circle cx="24" cy="70" r="2"/><circle cx="33" cy="70" r="2"/><circle cx="42" cy="70" r="2"/></g><path d="M39 35q9-9 18 0M43 39q5-5 10 0" fill="none" stroke="#5C58B8" stroke-width="3" stroke-linecap="round"/></svg>

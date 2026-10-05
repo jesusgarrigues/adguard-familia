@@ -22,6 +22,7 @@
   };
   function updateBadges() {
     const count = countPending(requests, user);
+    window.ParentalBadges?.update(count,user);
     for (const badge of document.querySelectorAll('[data-request-count]')) {
       badge.textContent = count > 99 ? '99+' : String(count);
       badge.hidden = !count;
@@ -37,7 +38,8 @@
     document.body.dataset.page = view;
     document.body.classList.toggle('signed-in', !!account);
     for (const nav of document.querySelectorAll('.nav')) {
-      const active = nav.dataset.page === (view === 'client' ? 'clients' : view);
+      const parent=['global','server','nintendo','users','audit'].includes(view)?'settings':view==='client'?'clients':view;
+      const active = nav.dataset.page === parent;
       nav.classList.toggle('active', active);
       if (active) nav.setAttribute('aria-current', 'page');
       else nav.removeAttribute('aria-current');
@@ -104,21 +106,36 @@
   function renderSettings(root, account) {
     const group = (title) => { const n = make('section', '', 'form-section settings-section'); n.append(make('h3', title)); root.append(n); return n; };
     const action = (parent, label, handler, cls = '') => { const b = make('button', label, cls); b.type = 'button'; b.onclick = handler; parent.append(b); return b; };
-    const profile = group('Tu cuenta');
+    const appHeading=make('h2','Parental','settings-group-title');root.append(appHeading);
+    const profile = group('Mi perfil');
     const roles = {admin: 'Administrador', responsable: 'Responsable', solicitante: 'Solicitante', observador: 'Observador'};
-    profile.append(make('strong', account.username), make('p', roles[account.role] || account.role));
+    const profileIdentity=make('div','','profile-identity'),preview=window.ParentalIdentity.avatar(account,'account-avatar'),description=make('div');
+    description.append(make('strong', account.username), make('p', roles[account.role] || account.role));profileIdentity.append(preview,description);profile.append(profileIdentity);
+    const details=make('details','','profile-avatar-details');details.append(make('summary','Cambiar cara'));
+    const status=make('p','','profile-feedback');status.setAttribute('role','status');
+    const picker=window.ParentalIdentity.picker(account.avatar,()=>{callbacks.avatarDraft();status.textContent='Cara seleccionada. Guarda para conservarla.';});details.append(picker.element);
+    const save=action(details,'Guardar cara',async()=>{const chosen=picker.getValue();save.disabled=true;const choices=[...picker.element.querySelectorAll('button')];for(const choice of choices)choice.disabled=true;try{await callbacks.saveAvatar(chosen,profile);const next=window.ParentalIdentity.avatar({...account,avatar:chosen},'account-avatar');profileIdentity.replaceChild(next,profileIdentity.firstChild);status.textContent='Cara guardada.';}catch(error){status.textContent='No se pudo guardar: '+error.message;}finally{save.disabled=false;for(const choice of choices)choice.disabled=false;}},'primary');details.append(status);profile.append(details);
     action(profile, 'Cerrar sesión', callbacks.signout, 'ghost');
     if (account.role === 'admin') {
       const manage = group('Administración');
-      for (const [view, label] of [['server', 'Servidores e integraciones'], ['global', 'Configuración global'], ['users', 'Usuarios y roles'], ['audit', 'Registro de cambios']]) action(manage, label + ' ›', () => callbacks.navigate(view), 'settings-link');
+      for (const [view, label] of [['users', 'Usuarios y roles'], ['audit', 'Registro de cambios']]) action(manage, label + ' ›', () => callbacks.navigate(view), 'settings-link');
     }
     const notifications = group('Avisos del navegador');
     notifications.append(make('p', 'Recibe avisos de solicitudes y consultas bloqueadas mientras el panel esté abierto.'));
-    action(notifications, 'Activar avisos', callbacks.notifications);
+    window.ParentalNotifications.panel(notifications);
+    const badgeHint=make('p','','notification-scope');badgeHint.dataset.appBadgeStatus='';notifications.append(badgeHint);window.ParentalBadges?.render();
     const installation = group('Instalar Parental'); installation.id = 'install-settings';
     const identity = make('div', '', 'install-identity'), image = make('img'); image.src = '/apple-touch-icon.png'; image.alt = ''; image.className = 'install-icon';
     const hint = make('p'); hint.dataset.installHint = ''; identity.append(image, hint); installation.append(identity);
     action(installation, ios() ? 'Cómo instalar en iPhone' : 'Instalar Parental', install, 'primary');
+    if(account.role==='admin'){
+      root.append(make('h2','Integraciones','settings-group-title'));
+      const adguard=group('AdGuard Home');adguard.append(make('p','Conexión y configuración global que heredan los clientes.'));
+      action(adguard,'Conexión de AdGuard ›',()=>callbacks.navigate('server'),'settings-link');
+      action(adguard,'Configuración global de AdGuard ›',()=>callbacks.navigate('global'),'settings-link');
+      const nintendo=group('Nintendo');nintendo.append(make('p','Cuenta, conexión y sincronización de las consolas. Los límites de cada consola están en su detalle.'));
+      action(nintendo,'Conexión de Nintendo ›',()=>callbacks.navigate('nintendo'),'settings-link');
+    }
     updateInstallBanner();
   }
   function init(options) {

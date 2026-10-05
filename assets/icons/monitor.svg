@@ -1,15 +1,1 @@
-<svg
-  xmlns="http://www.w3.org/2000/svg"
-  width="24"
-  height="24"
-  viewBox="0 0 24 24"
-  fill="none"
-  stroke="#0f766e"
-  stroke-width="2"
-  stroke-linecap="round"
-  stroke-linejoin="round"
->
-  <rect width="20" height="14" x="2" y="3" rx="2" />
-  <line x1="8" x2="16" y1="21" y2="21" />
-  <line x1="12" x2="12" y1="17" y2="21" />
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96"><defs><linearGradient id="paint" x2=".8" y2="1"><stop stop-color="#84BCFF"/><stop offset="1" stop-color="#3763C4"/></linearGradient><linearGradient id="metal" x2="0" y2="1"><stop stop-color="#F1F5FC"/><stop offset="1" stop-color="#AAB8D0"/></linearGradient><linearGradient id="screen" x2="1" y2="1"><stop stop-color="#74E4FF"/><stop offset="1" stop-color="#4B5DED"/></linearGradient></defs><ellipse cx="48" cy="83" rx="32" ry="5" fill="#14294D" opacity=".12"/><path d="M42 64h12l3 15H39z" fill="url(#metal)"/><rect x="31" y="77" width="34" height="5" rx="2" fill="#AAB8D0"/><rect x="9" y="15" width="78" height="54" rx="7" fill="url(#paint)"/><rect x="14" y="20" width="68" height="38" rx="3" fill="url(#screen)"/><path d="M14 48l30-27 22 12 16-4v29H14z" fill="#A3C5FF" opacity=".6"/><circle cx="48" cy="63" r="2" fill="#D9F2FF"/></svg>

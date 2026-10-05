@@ -1,13 +1,1 @@
-<svg
-  xmlns="http://www.w3.org/2000/svg"
-  width="24"
-  height="24"
-  viewBox="0 0 24 24"
-  fill="none"
-  stroke="#0f766e"
-  stroke-width="2"
-  stroke-linecap="round"
-  stroke-linejoin="round"
->
-  <path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3" />
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96"><defs><linearGradient id="paint" x2=".8" y2="1"><stop stop-color="#D5AEFF"/><stop offset="1" stop-color="#9469D5"/></linearGradient><linearGradient id="metal" x2="0" y2="1"><stop stop-color="#F1F5FC"/><stop offset="1" stop-color="#AAB8D0"/></linearGradient><linearGradient id="screen" x2="1" y2="1"><stop stop-color="#74E4FF"/><stop offset="1" stop-color="#4B5DED"/></linearGradient></defs><ellipse cx="48" cy="83" rx="32" ry="5" fill="#14294D" opacity=".12"/><path d="M18 53V41a30 30 0 0 1 60 0v12" fill="none" stroke="#554597" stroke-width="12"/><path d="M18 46v-5a30 30 0 0 1 60 0v5" fill="none" stroke="#BCA2FC" stroke-width="7"/><rect x="9" y="44" width="20" height="31" rx="9" fill="url(#paint)"/><rect x="67" y="44" width="20" height="31" rx="9" fill="url(#paint)"/><rect x="22" y="48" width="9" height="23" rx="4" fill="#5D4A9F"/><rect x="65" y="48" width="9" height="23" rx="4" fill="#5D4A9F"/></svg>

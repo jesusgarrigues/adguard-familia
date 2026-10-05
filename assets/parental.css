@@ -14,7 +14,7 @@ button{color:#111;border-color:#dedede;border-radius:999px;font-weight:550}butto
 input,select,textarea{color:#111;border-color:#d1d1d1;background:#fff;border-radius:10px}input:disabled,select:disabled,textarea:disabled{background:#f5f5f5;color:#62666d}
 input[type=checkbox]{accent-color:#111}.toggle{border-color:#ededed}label.field>span{color:#444}.safe-picker{column-gap:18px}
 .device-icon,.computer{background:#f4f4f4;color:#111;border-radius:12px}.device-icon.icon-laptop,.device-icon.icon-tablet,.device-icon.icon-smartphone,.device-icon.icon-tv,.device-icon.icon-gamepad-2{background:#f4f4f4}
-.device-icon img{filter:grayscale(1) brightness(.2)}.compact-client{padding:20px}.compact-client:hover,.nintendo-card:hover{border-color:#b9b9b9;background:#fdfdfd}
+.device-icon img{filter:none}.compact-client{padding:20px}.compact-client:hover,.nintendo-card:hover{border-color:#b9b9b9;background:#fdfdfd}
 .compact-client .client-head{margin-bottom:12px}.compact-client h3,.nintendo-card h3{font-size:17px;letter-spacing:-.3px}.compact-client .meta small{color:#767676;font-size:12px}
 .badge{background:#fff3e4;color:#88500b;border-radius:8px;font-size:11px;padding:5px 9px}.allowed{background:#e9f8ee;color:#087443}.neutral{background:#f1f1f1;color:#5b5b5b}
 .compact-exception{background:#effbf3;border-color:#d4eddb;color:#087443;padding:10px 12px}.compact-timer{font-size:17px;font-variant-numeric:tabular-nums}.compact-client .client-status{color:#767676;margin:10px 0 0}
@@ -52,3 +52,20 @@ input[type=checkbox]{accent-color:#111}.toggle{border-color:#ededed}label.field>
  .install-banner{gap:8px;padding:12px}.install-banner img{width:34px;height:34px}.install-banner strong{font-size:12px}.install-banner small{font-size:11px}.install-banner button{padding:8px 10px;font-size:12px}.install-banner [data-dismiss-install]{min-width:26px;padding:8px 3px}
  .install-backdrop{padding:16px}.install-panel{padding:24px 20px}.install-panel h2{font-size:24px}#login{margin:24px 0}.content header .actions{display:none}
 }
+/* Original illustrations carry the color; controls and typography stay quiet. */
+.device-icon,.computer,.device-icon.icon-laptop,.device-icon.icon-tablet,.device-icon.icon-smartphone,.device-icon.icon-tv,.device-icon.icon-gamepad-2{background:transparent!important;border-radius:14px;width:64px;height:64px;flex:0 0 64px;overflow:visible;padding:0}
+.device-icon img{width:64px;height:64px;max-width:none;filter:none!important;object-fit:contain}
+.icon-choice .device-icon,.icon-choice .device-icon img{width:56px;height:56px;flex-basis:56px}
+.service-logo.service-brand{border:0}.service-logo img{display:block;object-fit:contain;width:24px;height:24px;filter:none}
+.settings-group-title{font-size:23px;letter-spacing:-.5px;margin:24px 0 16px}.settings-back{margin:0 0 20px;background:#f1f3f5;color:#111}
+.profile-identity{display:flex;align-items:center;gap:16px;min-width:0}.profile-identity strong{overflow-wrap:anywhere}.profile-identity p{margin:4px 0;color:#646873}
+.person-avatar,.account-avatar{display:flex;align-items:center;justify-content:center;object-fit:contain;flex:0 0 64px;width:64px;height:64px;border-radius:20px;background:#e9eff8;color:#35618a;font-weight:700;font-size:24px}
+.request-avatar{object-fit:contain}.request-avatar[src]{background:transparent}
+.profile-avatar-details{margin:20px 0}.profile-avatar-details>summary{cursor:pointer;font-weight:650;padding:12px 0}
+.avatar-picker{min-width:0;padding:0;border:0;margin:12px 0 18px}.avatar-picker legend{font-size:14px;color:#646873;margin-bottom:10px}
+.avatar-options{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:10px;max-width:560px}
+.avatar-option{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;background:#f7f8fa;border:2px solid transparent;border-radius:16px;padding:7px 3px;color:#424854;font-size:12px;min-width:0}
+.avatar-option .person-avatar{width:48px;height:48px;flex-basis:48px;border-radius:15px}.avatar-option[aria-pressed=true]{border-color:#111;background:#edf3fc}.avatar-option:hover{background:#edf3fc}.avatar-option:focus-visible{outline:3px solid #4488da;outline-offset:2px}
+.profile-feedback,[data-notification-feedback]{min-height:22px;overflow-wrap:anywhere}.notification-error{color:#a82a2a}.notification-scope{font-size:13px;color:#646873}[data-notification-panel] button{margin:5px 8px 5px 0}[data-notification-state]{display:inline-block;background:#f1f3f5;border-radius:8px;padding:6px 10px}
+@media(max-width:480px){.avatar-options{grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.device-icon,.computer{width:56px;height:56px;flex-basis:56px}.device-icon img{width:56px;height:56px}.settings-group-title{font-size:21px}[data-notification-panel] button{max-width:100%;white-space:normal}}
+.notification-target{outline:3px solid #5590df;outline-offset:4px;scroll-margin:100px 0}
