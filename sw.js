@@ -1,11 +1,11 @@
 // Only allowlisted public assets are cached. Accounts, API responses and HTML are never cached.
-const CACHE = 'parental-static-v3';
+const CACHE = 'parental-static-v4';
 importScripts('/assets/notification-targets.js','/assets/appearance-catalog.js');
 const PUBLIC = new Set([
   '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png', '/favicon.png', '/icon.svg',
   '/assets/app.css', '/assets/parental.css', '/assets/app-shell.js', '/assets/client-settings.js', '/assets/fonts/InterVariable.woff2',
   '/assets/appearance-catalog.js', '/assets/authentik.js', '/assets/identity.js', '/assets/notifications.js', '/assets/service-logos.js',
-  '/assets/notification-targets.js', '/assets/app-badges.js',
+  '/assets/notification-targets.js', '/assets/app-badges.js', '/assets/blocked-notifications.js',
   ...ParentalCatalog.avatars.map(item=>'/assets/avatars/'+item.id+'.svg'),
   ...["4chan","500px","9gag","activision_blizzard","aliexpress","amazon","amazon_streaming","amino","apple_streaming","battle_net","betano","betfair","betway","bigo_live","bilibili","blaze","blizzard_entertainment","bluesky","box","canais_globo","chatgpt","claro","claude","cloudflare","clubhouse","coolapk","copilot","crunchyroll","dailymotion","deepseek","deezer","directvgo","discord","discoveryplus","disneyplus","dola","douban","dropbox","ebay","electronic_arts","epic_games","espn","facebook","fdj_united","fifa","flickr","gemini","globoplay","gog","grindr","grok","hbomax","hulu","icloud_private_relay","iheartradio","imgur","instagram","io_interactive","iqiyi","kakaotalk","kik","kook","lazada","leagueoflegends","line","linkedin","lionsgateplus","looke","mail_ru","manus","mastodon","max","mercado_libre","meta_ai","microsoft_teams","minecraft","nebula","netflix","nintendo","nvidia","odysee","ok","olvid","onlyfans","origin","paramountplus","peacock_tv","perplexity","pinterest","playstation","playstore","plenty_of_fish","plex","pluto_tv","privacy","proton","qq","questionai","qwen","rakuten_viki","reddit","riot_games","roblox","rockstar_games","samsung_tv_plus","shein","shell_shockers","shopee","signal","skype","slack","snapchat","soundcloud","spotify","spotify_video","steam","telegram","temu","tidal","tiktok","tinder","tumblr","twitch","twitter","ubisoft","valorant","viber","vimeo","vivo_play","vk","voot","wargaming","warnerbrosgames","wechat","weibo","whatsapp","wizz","xboxlive","xiaohongshu","youtube","yy","zhihu"].map(id=>'/assets/services/'+id+'.svg'),
   ...ParentalCatalog.devices.map(item => '/assets/icons/' + item.id + '.svg')

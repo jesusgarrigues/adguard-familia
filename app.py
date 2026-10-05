@@ -10,6 +10,8 @@ import auth
 import re
 import nintendo
 import oidc
+import blocked_alerts
+from datetime import datetime
 
 ROOT = Path(__file__).parent
 DATA = Path(os.getenv('DATA_DIR', '/data'))
@@ -28,6 +30,7 @@ CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS client_appearance (identity TEXT PRIMARY KEY, icon TEXT NOT NULL);
 ''')
 LAST_ERROR = ''
+LAST_POLL = {'status':'waiting','message':'Todavía no se ha leído el registro de consultas.'}
 DIAGNOSTICS = deque(maxlen=100)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 SAFE_KEYS = ('enabled','bing','duckduckgo','ecosia','google','pixabay','yandex','youtube')
@@ -43,6 +46,7 @@ STATIC_ASSETS = {
     '/assets/appearance-catalog.js': ('assets/appearance-catalog.js','application/javascript'),
     '/assets/authentik.js': ('assets/authentik.js','application/javascript'),
     '/assets/identity.js': ('assets/identity.js','application/javascript'),
+    '/assets/blocked-notifications.js': ('assets/blocked-notifications.js','application/javascript'),
     '/assets/notifications.js': ('assets/notifications.js','application/javascript'),
     '/assets/notification-targets.js': ('assets/notification-targets.js','application/javascript'),
     '/assets/app-badges.js': ('assets/app-badges.js','application/javascript'),
@@ -242,8 +246,8 @@ def save_baseline(name,b):
     DB.commit()
 
 
-def event(client, service, domain='', kind='blocked'):
-    DB.execute('INSERT INTO events(time,client,service,domain,kind) VALUES(?,?,?,?,?)',(time.time(),client,service,domain,kind))
+def event(client, service, domain='', kind='blocked', occurred=None):
+    DB.execute('INSERT INTO events(time,client,service,domain,kind) VALUES(?,?,?,?,?)',(time.time() if occurred is None else occurred,client,service,domain,kind))
     DB.execute('DELETE FROM events WHERE id NOT IN (SELECT id FROM events ORDER BY id DESC LIMIT 500)')
     DB.commit()
 
@@ -311,13 +315,19 @@ def reconcile():
     if failures: raise RuntimeError('; '.join(failures))
 
 
-def permit(name, service, minutes):
+def permit(name, service, minutes, require_blocked=False):
     if type(minutes) is not int or not 1 <= minutes <= 1440: raise ValueError('Duración entre 1 y 1440 minutos')
     services={s['id'] for s in api('blocked_services/all')['blocked_services']} | set(RESTRICTIONS)
     if service not in services: raise ValueError('Restricción desconocida')
     clients={c['name']:c for c in api('clients')['clients']}
     if name not in clients: raise ValueError('Da de alta este cliente en AdGuard antes de crear un permiso')
     c=clients[name]
+    if type(require_blocked) is not bool: raise ValueError('Origen del permiso inválido')
+    if require_blocked:
+        current=effective(c,global_config())
+        active=DB.execute('SELECT 1 FROM leases WHERE client=? AND service=? AND expires>?',(name,service,time.time())).fetchone()
+        blocked=current['safe_search'].get('enabled',False) if service=='@safesearch' else current[RESTRICTIONS[service]] if service in RESTRICTIONS else service in current['blocked_services']
+        if active or not blocked: raise ValueError('La restricción ya no está activa o ya existe un permiso. Actualiza los datos.')
     b=baseline_for(name) or {'base':copy.deepcopy(c),'applied':copy.deepcopy(c)}
     eff=effective(b['base'],global_config())
     enabled=eff['safe_search'].get('enabled',False) if service=='@safesearch' else eff[RESTRICTIONS[service]] if service in RESTRICTIONS else service in eff['blocked_services']
@@ -431,30 +441,63 @@ def save_server(body,test_only=False):
 
 def client_identity(q, clients):
     info=q.get('client_info') or {}
-    if info.get('name'): return info['name']
+    if info.get('name') in {c['name'] for c in clients}: return info['name']
     value=q.get('client_id') or q.get('client','')
     for c in clients:
-        if value in c.get('ids',[]): return c['name']
+        if value in c.get('ids',[]) or q.get('client','') in c.get('ids',[]): return c['name']
+    matches=[]
+    for c in clients:
         for identifier in c.get('ids',[]):
             try:
-                if ipaddress.ip_address(q.get('client','')) in ipaddress.ip_network(identifier,strict=False): return c['name']
+                network=ipaddress.ip_network(identifier,strict=False)
+                if ipaddress.ip_address(q.get('client','')) in network: matches.append((network.prefixlen,c['name']))
             except ValueError: pass
-    return value or 'Desconocido'
+    return max(matches)[1] if matches else value or 'Desconocido'
 
 
 def poll():
+    global LAST_POLL
     clients=api('clients')['clients']
-    reasons={'FilteredSafeBrowsing':'@safebrowsing','FilteredParental':'@parental','SafeSearch':'@safesearch','FilteredBlackList':'@filtering'}
-    for q in reversed(api('querylog?limit=500')['data']):
-        service=q.get('service_name') if q.get('reason')=='BlockedService' else reasons.get(q.get('reason'))
-        if not service: continue
+    reasons={'FilteredSafeBrowsing':'@safebrowsing','FilteredParental':'@parental','FilteredSafeSearch':'@safesearch','SafeSearch':'@safesearch','FilteredBlackList':'@filtering'}
+    data=api('querylog?limit=500')['data']
+    counts={};recognized=0;unknown=0
+    catalog={item['id'] for item in api('blocked_services/all')['blocked_services']}
+    for q in reversed(data):
+        reason=q.get('reason','')
+        counts[reason]=counts.get(reason,0)+1
+        service=q.get('service_name') if reason in ('FilteredBlockedService','BlockedService') else reasons.get(reason)
+        if not isinstance(service,str) or not service: continue
+        if not service.startswith('@') and service not in catalog:
+            unknown+=1;continue
+        recognized+=1
         key=q.get('time','')+'|'+q.get('client','')+'|'+q.get('question',{}).get('name','')+'|'+service
         if DB.execute('SELECT 1 FROM seen WHERE key=?',(key,)).fetchone(): continue
+        try: occurred=datetime.fromisoformat(q['time'].replace('Z','+00:00')).timestamp()
+        except (ValueError,KeyError,AttributeError):
+            unknown+=1;continue
+        if occurred>time.time()+30: unknown+=1;continue
         DB.execute('INSERT INTO seen VALUES(?,?)',(key,time.time()))
         client=client_identity(q,clients)
-        recent=DB.execute('SELECT 1 FROM events WHERE client=? AND service=? AND kind=? AND time>?',(client,service,'blocked',time.time()-300)).fetchone()
-        if not recent: event(client,service,q.get('question',{}).get('name',''))
+        recent=DB.execute('SELECT 1 FROM events WHERE client=? AND service=? AND kind=? AND time BETWEEN ? AND ?',(client,service,'blocked',occurred-300,occurred+300)).fetchone()
+        if not recent: event(client,service,q.get('question',{}).get('name',''),occurred=occurred)
     DB.execute('DELETE FROM seen WHERE time<?',(time.time()-86400,));DB.commit()
+    LAST_POLL={'status':'ok','time':time.time(),'queries':len(data),'recognized':recognized,'unknown':unknown,'reasons':counts,'window_full':len(data)>=500,'excluded_clients':[c['name'] for c in clients if c.get('ignore_querylog')],
+               'message':'Ventana de 500 consultas completa; con mucho tráfico pueden faltar intentos entre lecturas.' if len(data)>=500 else 'Registro leído. Sin consultas de un dispositivo no se pueden detectar sus intentos.'}
+
+
+def notification_settings(user):
+    auth.require(user,'admin','responsable')
+    info=api('clients')['clients']
+    clients=[c for c in info if user['role']=='admin' or c['name'] in user['clients']]
+    result=blocked_alerts.preferences(user,{c['name'] for c in clients})
+    result['clients']=[{'name':c['name'],'ignore_querylog':c.get('ignore_querylog',False)} for c in clients]
+    result['services']=api('blocked_services/all')['blocked_services']
+    return result
+
+
+def save_notification_settings(user,body):
+    context=notification_settings(user)
+    return blocked_alerts.save(user,body,{s['id'] for s in context['services']},{c['name'] for c in context['clients']})
 
 
 def state():
@@ -477,6 +520,11 @@ def scoped_state(user):
             data['global_config']={'protection_enabled':data['global_config']['protection_enabled']}
             data['clients']=[{k:c[k] for k in ('name','ids','ui_icon','ui_auto_icon')} for c in data['clients']]
             data['base_clients']={name:{k:v for k,v in c.items() if k in ('name','ids','use_global_settings','use_global_blocked_services','ignore_querylog')} for name,c in data['base_clients'].items()}
+    allowed_events=[dict(zip(('id','time','client','service','domain','kind'),row)) for row in DB.execute('SELECT * FROM events ORDER BY id DESC LIMIT 500') if row[2] in allowed]
+    preferences=blocked_alerts.preferences(user,allowed) if user['role'] in ('admin','responsable') else {'preferences':blocked_alerts.defaults(),'updated':0}
+    data['notification_events']=blocked_alerts.eligible(user,allowed_events,preferences)
+    data['notification_cursor']=max((e['id'] for e in allowed_events),default=0)
+    data['notification_revision']=preferences['updated']
     data['requests']=auth.requests_for(user)
     return data
 
@@ -630,12 +678,14 @@ class Handler(BaseHTTPRequestHandler):
         if not user: return self.respond(401,{'error':'Inicia sesión para continuar'})
         try:
             if self.path=='/api/me': return self.respond(200,{'user':user,'csrf':user['csrf']})
+            if self.path=='/api/me/notifications':
+                with LOCK: return self.respond(200,notification_settings(user))
             if self.path=='/api/me/authentik': return self.respond(200,AUTHENTIK.status(user,self.cookie_token(),self.oidc_binding()))
             if self.path=='/api/authentik/config':
                 auth.require(user,'admin');return self.respond(200,AUTHENTIK.public_config())
             if self.path in ('/api/diagnostics','/api/server','/api/users','/api/audit'):
                 auth.require(user,'admin')
-                if self.path=='/api/diagnostics': return self.respond(200,{'entries':list(DIAGNOSTICS),'last_error':LAST_ERROR})
+                if self.path=='/api/diagnostics': return self.respond(200,{'entries':list(DIAGNOSTICS),'last_error':LAST_ERROR,'querylog':LAST_POLL})
                 if self.path=='/api/server': return self.respond(200,public_server())
                 if self.path=='/api/users':
                     linked={r['user_id'] for r in auth.DB.execute('SELECT user_id FROM external_identities')}
@@ -666,6 +716,8 @@ class Handler(BaseHTTPRequestHandler):
             user=self.user()
             if not user: return self.respond(401,{'error':'Inicia sesión para continuar'})
             if not hmac.compare_digest(self.headers.get('X-CSRF-Token',''),user['csrf']): raise auth.Forbidden('Sesión inválida. Vuelve a entrar')
+            if self.path=='/api/me/notifications':
+                with LOCK: return self.respond(200,save_notification_settings(user,body))
             if self.path=='/api/me/authentik/start':
                 url,binding=AUTHENTIK.begin('/?view=settings',user,self.cookie_token(),body.get('password'),self.client_address[0])
                 return self.oidc_start_response(url,binding)
@@ -745,7 +797,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(200,result)
             with LOCK:
                 result={'ok':True}
-                if self.path=='/api/permit': permit(body['client'],body['service'],body['minutes'])
+                if self.path=='/api/permit': permit(body['client'],body['service'],body['minutes'],body.get('from_blocked_event',False))
                 elif self.path=='/api/cancel': DB.execute('UPDATE leases SET expires=0 WHERE client=? AND service=?',(body['client'],body['service']));DB.commit();reconcile()
                 elif self.path=='/api/client': save_client(body['client'],body['patch'])
                 elif self.path=='/api/client/add': save_client('',body['patch'],True)

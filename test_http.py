@@ -63,6 +63,15 @@ try:
     rid=child.call('request',{'client':'iMac de Emma','service':'youtube','minutes':20,'reason':'Vídeo de clase'})['id']
     assert admin.call('state')['leases']==[]
     parent=Client();parent.call('auth/login',{'username':'parent','password':'parent-password-1234'})
+    prefs=parent.call('me/notifications');assert [c['name'] for c in prefs['clients']]==['iMac de Emma']
+    config=prefs['preferences'];config['mode']='selected';config['services']=['youtube']
+    parent.call('me/notifications',config)
+    assert parent.call('me/notifications')['preferences']['services']==['youtube']
+    assert admin.call('me/notifications')['preferences']['mode']=='all'
+    child.call('me/notifications',expected=403);child.call('me/notifications',config,403)
+    parent.call('me/notifications',dict(config,clients={'iMac de Martín':{'mode':'all','services':[],'protections':[]}}),403)
+    parent.call('me/notifications',dict(config,services=['unknown']),400)
+    parent.csrf='invalid';parent.call('me/notifications',config,403);parent.call('me')
     parent.call('request/review',{'id':rid,'decision':'approve','minutes':15})
     granted=child.call('state');assert len(granted['leases'])==1;assert granted['requests'][0]['status']=='approved'
     observer=Client();observer.call('auth/login',{'username':'observer','password':'observer-password-1234'})
