@@ -16,7 +16,7 @@ jobs:
         with:
           python-version: '3.13'
       - run: pip install -r requirements.txt
-      - run: python -m unittest -v test_app.py test_diagnostics.py test_auth.py test_nintendo.py test_nintendo_routes.py
+      - run: python -m unittest -v test_app.py test_diagnostics.py test_auth.py test_nintendo.py test_nintendo_routes.py test_oidc.py test_catalog.py
       - run: python test_http.py
       - uses: actions/setup-node@v4
         with:
@@ -33,6 +33,8 @@ jobs:
           node --check assets/client-settings.js
           node --check assets/app-shell.js
           node --check assets/identity.js
+          node --check assets/appearance-catalog.js
+          node --check assets/authentik.js
           node --check assets/notifications.js
           node --check assets/notification-targets.js
           node --check assets/app-badges.js
@@ -55,8 +57,8 @@ jobs:
       - name: Verify container dependencies and writable data
         run: |
           python test_compose.py
-          docker build -t adguard-familia:ci .
-          docker run --rm --read-only --tmpfs /tmp --tmpfs /data:uid=10001,gid=10001 --env DEMO=true --entrypoint python adguard-familia:ci -c "import app, pynintendoparental, pynintendoauth; from zoneinfo import ZoneInfo; ZoneInfo('Europe/Madrid'); assert not app.NINTENDO.public_config()['configured']; assert (app.ROOT/'assets/fonts/InterVariable.woff2').read_bytes()[:4]==b'wOF2'; assert (app.ROOT/'assets/icons/tv.svg').read_text(); app.NINTENDO.close()"
+          docker build -t parental:ci .
+          docker run --rm --read-only --tmpfs /tmp --tmpfs /data:uid=10001,gid=10001 --env DEMO=true --entrypoint python parental:ci -c "import app, oidc, jwt, pynintendoparental, pynintendoauth; from zoneinfo import ZoneInfo; ZoneInfo('Europe/Madrid'); assert not app.AUTHENTIK.login_enabled(); assert len(app.DEVICE_ICONS)==91; assert len(app.auth.AVATARS)==81; assert not app.NINTENDO.public_config()['configured']; assert (app.ROOT/'assets/fonts/InterVariable.woff2').read_bytes()[:4]==b'wOF2'; assert (app.ROOT/'assets/icons/tv.svg').read_text(); app.NINTENDO.close()"
   publish:
     needs: test
     if: github.event_name != 'pull_request'
@@ -79,7 +81,7 @@ jobs:
       - uses: docker/metadata-action@v5
         id: meta
         with:
-          images: ${{ vars.DOCKERHUB_USERNAME }}/adguard-familia
+          images: ${{ vars.DOCKERHUB_USERNAME }}/parental
           tags: |
             type=raw,value=edge,enable={{is_default_branch}}
             type=semver,pattern={{version}}

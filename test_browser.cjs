@@ -17,6 +17,7 @@ const native={configured:true,devices:[{id:'ABC',key:'nintendo:ABC',name:'Switch
 const requests=[{id:1,user_id:2,username:'martin',avatar:'face-04',client:'nintendo:ABC',service:'@nintendo',minutes:20,reason:'Jugar con mis amigos',status:'pending',created:Date.now()/1000,extend_bedtime:true,approved_extend_bedtime:null}];
 state.requests=requests;
 const user={id:1,username:'admin',avatar:'face-01',role:'admin',clients:[],edit_policy:true,max_minutes:1440};
+let authenticEnabled=false,authenticLinked=false,authenticPending=null;const authenticConfig={enabled:false,issuer:'',discovery_url:'',client_id:'',public_url:'',secret_set:false,callback_url:''};
 const calls=[];let adguardDown=false,clientFailure=null,readFailures=0,saveDelay=0;
 (async()=>{
  const browser=await chromium.launch({executablePath:process.env.CHROMIUM_EXECUTABLE||['/usr/bin/chromium','/usr/bin/google-chrome','/opt/google/chrome/chrome'].find(fs.existsSync),headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--disable-breakpad','--disable-crash-reporter']});
@@ -36,6 +37,11 @@ const calls=[];let adguardDown=false,clientFailure=null,readFailures=0,saveDelay
     state.base_clients[original.name]=original;if(original.name!==body.client)delete state.base_clients[body.client];
     state.base_effective[original.name]={...effective,blocked_services:original.use_global_blocked_services?ids:original.blocked_services};
    }
+   if(path==='authentik/config'&&body){Object.assign(authenticConfig,{enabled:body.enabled,issuer:body.issuer,discovery_url:body.discovery_url,client_id:body.client_id,public_url:body.public_url,secret_set:!!body.client_secret,callback_url:body.public_url+'/api/auth/oidc/callback'});authenticEnabled=body.enabled;return route.fulfill({contentType:'application/json',body:JSON.stringify(authenticConfig)});}
+   if(path==='me/authentik/confirm'&&body){authenticLinked=true;authenticPending=null;return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true})});}
+   if(path==='authentik/test')return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,message:'Proveedor simulado: descubrimiento y firma comprobados.'})});
+   if(path==='authentik/config')return route.fulfill({contentType:'application/json',body:JSON.stringify(authenticConfig)});
+   if(path==='me/authentik')return route.fulfill({contentType:'application/json',body:JSON.stringify({enabled:authenticEnabled,linked:authenticLinked,identity:authenticLinked?{label:'adulto-authentik',issuer:'https://auth.test/application/o/parental/'}:null,pending:authenticPending})});
    if(path==='me/avatar'&&body){user.avatar=body.avatar;return route.fulfill({contentType:'application/json',body:JSON.stringify({user})});}
    if(path==='client/icon'&&body){const device=body.client.startsWith('nintendo:')?native.devices.find(d=>d.key===body.client):state.clients.find(c=>c.name===body.client);device.ui_icon=body.icon==='auto'?null:body.icon;}
    if(path==='nintendo/operation/close'&&body){
@@ -143,7 +149,7 @@ const calls=[];let adguardDown=false,clientFailure=null,readFailures=0,saveDelay
  await page.locator('#adguard-dialog-backdrop').getByRole('button',{name:'Cerrar',exact:true}).click();
  // Device icons use the same saved selection after closing and reopening.
  await page.locator('[data-client-card="iMac de Emma"]').click();await page.locator('#adguard-dialog-backdrop').getByRole('button',{name:'Cambiar icono',exact:true}).click();
- assert.equal(await page.locator('#icon-selector .icon-choice').count(),13);
+ assert.equal(await page.locator('#icon-selector .icon-choice').count(),92);
  await page.locator('#icon-selector [data-icon="tv"]').click();await page.getByRole('button',{name:'Guardar icono',exact:true}).click();
  await page.locator('#icon-selector').waitFor({state:'detached'});
  assert.ok(await page.locator('[data-client-card="iMac de Emma"] img[src="/assets/icons/tv.svg"]').isVisible());
@@ -293,13 +299,51 @@ const calls=[];let adguardDown=false,clientFailure=null,readFailures=0,saveDelay
  await page.evaluate(()=>{window.badgeCalls=[];Object.defineProperty(navigator,'setAppBadge',{value:async n=>window.badgeCalls.push(['set',n]),configurable:true});Object.defineProperty(navigator,'clearAppBadge',{value:async()=>window.badgeCalls.push(['clear']),configurable:true});ParentalUI.setRequests([],null);ParentalUI.setRequests(state.requests,me)});
  await page.waitForFunction(()=>window.badgeCalls.some(c=>c[0]==='set'&&c[1]===1));await page.evaluate(()=>ParentalUI.setRequests([],null));await page.waitForFunction(()=>window.badgeCalls.at(-1)[0]==='clear');
  await page.evaluate(()=>ParentalUI.setRequests(state.requests,me));
+ // Expanded catalogs and Authentik account/configuration controls.
+ await page.evaluate(()=>{me={...me,role:'admin'};dirty=false;go('settings')});
+ await page.locator('#authentik-settings').waitFor();
+ const authPanel=page.locator('#authentik-settings');
+ await authPanel.getByLabel('Issuer esperado',{exact:true}).fill('https://auth.test/application/o/parental/');
+ await authPanel.getByLabel('URL de descubrimiento OIDC',{exact:true}).fill('https://auth.test/application/o/parental/.well-known/openid-configuration');
+ await authPanel.getByLabel('Client ID',{exact:true}).fill('parental-client');
+ await authPanel.getByLabel('Client secret (vacío conserva el guardado)',{exact:true}).fill('simulated-provider-secret');
+ await authPanel.getByLabel('URL pública HTTPS de Parental',{exact:true}).fill('https://preview.local');
+ await authPanel.getByLabel('Tu contraseña local para guardar cambios',{exact:true}).fill('simulated-local-password');
+ await authPanel.locator('input[type=checkbox]').check();
+ assert.equal(await authPanel.getByLabel('Redirect URI para copiar en Authentik',{exact:true}).inputValue(),'https://preview.local/api/auth/oidc/callback');
+ // Saving the avatar must not mark an unsaved identity configuration as clean.
+ await page.getByText('Cambiar cara',{exact:true}).click();await page.locator('[data-avatar="face-07"]').click();
+ await page.getByRole('button',{name:'Guardar cara',exact:true}).click();await page.getByText('Cara guardada.',{exact:true}).waitFor();
+ assert.equal(await page.evaluate(()=>dirty),true);
+ await authPanel.getByRole('button',{name:'Guardar Authentik',exact:true}).click();
+ await authPanel.getByText('Configuración guardada.',{exact:false}).waitFor();assert.equal(await page.evaluate(()=>dirty),false);
+ assert.equal(await authPanel.getByLabel('Client secret (vacío conserva el guardado)',{exact:true}).inputValue(),'');
+ await authPanel.getByRole('button',{name:'Probar configuración guardada',exact:true}).click();await authPanel.getByText('Proveedor simulado: descubrimiento y firma comprobados.',{exact:true}).waitFor();
+ authenticPending={confirmation:'fixture-confirmation',label:'adulto-authentik',expires:Date.now()/1000+300};
+ await page.evaluate(()=>go('settings'));await page.getByRole('button',{name:'Vincular estas cuentas',exact:true}).waitFor();
+ await page.getByRole('button',{name:'Vincular estas cuentas',exact:true}).click();await page.getByText('Vinculado con adulto-authentik',{exact:true}).waitFor();
+ assert.ok(calls.some(c=>c.path==='me/authentik/confirm'&&c.body.confirmation==='fixture-confirmation'));
+ await page.getByText('Cambiar cara',{exact:true}).click();
+ await page.getByLabel('Categoría de imágenes',{exact:true}).selectOption('Animales');
+ assert.equal(await page.locator('.avatar-options [data-avatar^=animal]:visible').count(),24);
+ await page.getByLabel('Buscar imagen de usuario',{exact:true}).fill('Unicornio');await page.locator('[data-avatar="animal-24"]').click();
+ await page.getByRole('button',{name:'Guardar cara',exact:true}).click();await page.getByText('Cara guardada.',{exact:true}).waitFor();
+ assert.equal(await page.locator('.account-avatar').getAttribute('src'),'/assets/avatars/animal-24.svg');
+ for(const width of [320,375,390,430]){await page.setViewportSize({width,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Expanded settings overflow at '+width);}
+ await page.screenshot({path:shots+'/parental-authentik-mobile.png',fullPage:true});
+ await page.evaluate(()=>go('clients'));await page.locator('[data-client-card="iMac de Emma"]').click();await page.getByRole('button',{name:'Cambiar icono',exact:true}).click();
+ await page.getByLabel('Categoría de iconos',{exact:true}).selectOption('Domótica');await page.getByLabel('Buscar icono',{exact:true}).fill('Home Assistant');
+ assert.equal(await page.locator('#icon-selector [data-icon="home-assistant"]').isVisible(),true);
+ await page.locator('#icon-selector [data-icon="home-assistant"]').click();await page.getByRole('button',{name:'Guardar icono',exact:true}).click();
+ await page.locator('#icon-selector').waitFor({state:'detached'});assert.ok(await page.locator('[data-client-card="iMac de Emma"] img[src="/assets/icons/home-assistant.svg"]').isVisible());
+ await page.locator('#adguard-dialog-backdrop').getByRole('button',{name:'Cerrar',exact:true}).click();
  await page.setViewportSize({width:1440,height:1000});
  await page.evaluate(async()=>{
   token='';for(const n of document.body.children)n.style.display='none';document.body.style.display='block';document.body.style.padding='32px';
   const board=document.createElement('section');board.style.cssText='max-width:1380px;margin:auto';document.body.append(board);
   const group=(label)=>{const h=document.createElement('h2');h.textContent=label;board.append(h);const grid=document.createElement('div');grid.style.cssText='display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:12px;margin:24px 0 40px';board.append(grid);return grid;};
-  const devices=group('Parental · 12 dispositivos originales');for(const [id,label]of deviceIconCatalog){const item=document.createElement('div');item.append(clientDeviceIcon({ui_icon:id,name:label}));const name=document.createElement('small');name.textContent=label;item.append(name);devices.append(item);}
-  const faces=group('12 caras editables');for(const face of ParentalIdentity.faces)faces.append(ParentalIdentity.avatar({avatar:face.id}));
+  const devices=group('Parental · 91 iconos de dispositivos y software');for(const [id,label]of deviceIconCatalog){const item=document.createElement('div');item.append(clientDeviceIcon({ui_icon:id,name:label}));const name=document.createElement('small');name.textContent=label;item.append(name);devices.append(item);}
+  const faces=group('80 imágenes editables');for(const face of ParentalIdentity.faces)faces.append(ParentalIdentity.avatar({avatar:face.id}));
   const brands=group('142 logos locales · Catálogo oficial de AdGuard');for(const id of Object.keys(ParentalServices)){const item=document.createElement('div');item.style.cssText='display:flex;align-items:center;flex-direction:column;gap:8px;padding:12px 4px;border:1px solid #eee;border-radius:12px';item.append(serviceIcon(id));const name=document.createElement('small');name.textContent=id;name.style.cssText='font-size:10px;overflow-wrap:anywhere;text-align:center';item.append(name);brands.append(item);}
   await Promise.all([...board.querySelectorAll('img')].map(img=>img.complete?(img.naturalWidth?Promise.resolve():Promise.reject(Error(img.src))):new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=()=>reject(Error(img.src))})));
  });

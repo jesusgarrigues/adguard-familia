@@ -27,7 +27,7 @@ ui.setRequests([],null);assert.equal(badges[0].hidden,true);assert.equal(navigat
   caches:{open:async()=>cache,keys:async()=>['parental-static-old','other-app-cache'],delete:async key=>{deleted.push(key)}},
   fetch:async request=>{if(offline)throw Error('offline');const url=typeof request==='string'?request:request.url;return new Response('public resource '+url)}
  });
- sw.importScripts=()=>vm.runInContext(fs.readFileSync('assets/notification-targets.js','utf8'),sw);
+ sw.importScripts=(...paths)=>{for(const path of paths)vm.runInContext(fs.readFileSync(path.slice(1),'utf8'),sw);};
  vm.runInContext(fs.readFileSync('sw.js','utf8'),sw);
  let promise;handlers.install({waitUntil:p=>promise=p});await promise;
  assert.ok(storage.has('/apple-touch-icon.png'));assert.ok(storage.has('/assets/parental.css'));

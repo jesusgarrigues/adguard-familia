@@ -3,7 +3,7 @@ import hashlib, hmac, json, secrets, sqlite3, threading, time
 from pathlib import Path
 
 ROLES={'admin','responsable','solicitante','observador'}
-AVATARS=('', *(f'face-{n:02d}' for n in range(1,13)))
+AVATARS=('', *(item['id'] for item in json.loads((Path(__file__).parent/'assets/appearance-catalog.json').read_text())['avatars']))
 LOCK=threading.RLock()
 DB=None
 
@@ -24,6 +24,11 @@ def init(folder):
     if 'approved_extend_bedtime' not in columns: DB.execute('ALTER TABLE requests ADD COLUMN approved_extend_bedtime INTEGER')
     if 'avatar' not in {row['name'] for row in DB.execute('PRAGMA table_info(users)')}:
         DB.execute("ALTER TABLE users ADD COLUMN avatar TEXT NOT NULL DEFAULT ''")
+    session_columns={row['name'] for row in DB.execute('PRAGMA table_info(sessions)')}
+    for name in ('auth_provider','auth_issuer','auth_subject'):
+        if name not in session_columns: DB.execute('ALTER TABLE sessions ADD COLUMN '+name+" TEXT NOT NULL DEFAULT ''")
+    DB.executescript('''CREATE TABLE IF NOT EXISTS external_identities(user_id INTEGER PRIMARY KEY, issuer TEXT NOT NULL, subject TEXT NOT NULL, label TEXT NOT NULL, linked REAL NOT NULL, UNIQUE(issuer,subject));
+    CREATE TABLE IF NOT EXISTS oidc_flows(state TEXT PRIMARY KEY, binding TEXT NOT NULL, kind TEXT NOT NULL, user_id INTEGER, session_hash TEXT, nonce TEXT NOT NULL, verifier TEXT NOT NULL, revision TEXT NOT NULL, expires REAL NOT NULL, target TEXT NOT NULL, identity TEXT NOT NULL DEFAULT '{}');''')
     DB.commit()
 
 
@@ -117,10 +122,25 @@ def login(username,password,ip):
             count=attempt['count']+1 if attempt and attempt['until']>now else 1
             DB.execute('INSERT OR REPLACE INTO attempts VALUES(?,?,?)',(key,count,now+900));DB.commit();raise Forbidden('Credenciales incorrectas')
         DB.execute('DELETE FROM attempts WHERE key=?',(key,));DB.execute('DELETE FROM sessions WHERE expires<?',(now,))
+        return issue_session(row)
+
+
+def issue_session(row,provider='',issuer='',subject=''):
+    """Only called after local password or fully verified OIDC authentication."""
+    with LOCK:
+        current=DB.execute('SELECT * FROM users WHERE id=? AND active=1',(row['id'],)).fetchone()
+        if not current: raise Forbidden('La cuenta está desactivada')
         token=secrets.token_urlsafe(32);csrf=secrets.token_urlsafe(24)
-        DB.execute('INSERT INTO sessions VALUES(?,?,?,?)',(hashlib.sha256(token.encode()).hexdigest(),row['id'],csrf,now+43200));DB.commit()
-        audit(public(row),'login',{})
-        return token,csrf,public(row)
+        DB.execute('INSERT INTO sessions(token,user_id,csrf,expires,auth_provider,auth_issuer,auth_subject) VALUES(?,?,?,?,?,?,?)',(hashlib.sha256(token.encode()).hexdigest(),current['id'],csrf,time.time()+43200,provider,issuer,subject));DB.commit()
+        audit(public(current),'login',{'provider':provider or 'local'})
+        return token,csrf,public(current)
+
+
+def reauthenticate(actor,password,ip):
+    if not actor: raise Forbidden('Inicia sesión para continuar')
+    token,_,user=login(actor['username'],password,ip)
+    logout(token)
+    if user['id']!=actor['id']: raise Forbidden('La sesión ha cambiado')
 
 
 def session(token):
