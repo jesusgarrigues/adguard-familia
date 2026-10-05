@@ -104,6 +104,7 @@
     }
   }
   function renderSettings(root, account) {
+    callbacks.settingsStart?.();
     const group = (title) => { const n = make('section', '', 'form-section settings-section'); n.append(make('h3', title)); root.append(n); return n; };
     const action = (parent, label, handler, cls = '') => { const b = make('button', label, cls); b.type = 'button'; b.onclick = handler; parent.append(b); return b; };
     const appHeading=make('h2','Parental','settings-group-title');root.append(appHeading);
@@ -114,10 +115,12 @@
     const details=make('details','','profile-avatar-details');details.append(make('summary','Cambiar cara'));
     const status=make('p','','profile-feedback');status.setAttribute('role','status');
     const picker=window.ParentalIdentity.picker(account.avatar,()=>{callbacks.avatarDraft();status.textContent='Cara seleccionada. Guarda para conservarla.';});details.append(picker.element);
-    const save=action(details,'Guardar cara',async()=>{const chosen=picker.getValue();save.disabled=true;const choices=[...picker.element.querySelectorAll('button')];for(const choice of choices)choice.disabled=true;try{await callbacks.saveAvatar(chosen,profile);const next=window.ParentalIdentity.avatar({...account,avatar:chosen},'account-avatar');profileIdentity.replaceChild(next,profileIdentity.firstChild);status.textContent='Cara guardada.';}catch(error){status.textContent='No se pudo guardar: '+error.message;}finally{save.disabled=false;for(const choice of choices)choice.disabled=false;}},'primary');details.append(status);profile.append(details);
+    const save=action(details,'Guardar cara',async()=>{const chosen=picker.getValue();save.disabled=true;const choices=[...picker.element.querySelectorAll('button,input,select')];for(const choice of choices)choice.disabled=true;try{await callbacks.saveAvatar(chosen,profile);const next=window.ParentalIdentity.avatar({...account,avatar:chosen},'account-avatar');profileIdentity.replaceChild(next,profileIdentity.firstChild);status.textContent='Cara guardada.';}catch(error){status.textContent='No se pudo guardar: '+error.message;}finally{save.disabled=false;for(const choice of choices)choice.disabled=false;}},'primary');details.append(status);profile.append(details);
+    window.ParentalAuthentik.profile(profile,account,{request:callbacks.request,beforeRedirect:callbacks.identityLeave});
     action(profile, 'Cerrar sesión', callbacks.signout, 'ghost');
     if (account.role === 'admin') {
       const manage = group('Administración');
+      window.ParentalAuthentik.config(root,{request:callbacks.request,draft:callbacks.identityDraft,clean:callbacks.identityClean});
       for (const [view, label] of [['users', 'Usuarios y roles'], ['audit', 'Registro de cambios']]) action(manage, label + ' ›', () => callbacks.navigate(view), 'settings-link');
     }
     const notifications = group('Avisos del navegador');

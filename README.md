@@ -1,12 +1,12 @@
 # Parental
 
-Antes AdGuard Familia. El repositorio y la imagen `jesusgarrigues/adguard-familia` conservan su nombre para que las instalaciones existentes sigan actualizándose con el mismo Compose y volumen.
+Antes AdGuard Familia. Repositorio: [jesusgarrigues/parental](https://github.com/jesusgarrigues/parental). Imagen: `jesusgarrigues/parental`. El servicio `companion` y el volumen `companion-data` conservan su nombre para mantener los datos de instalaciones existentes.
 
 Panel familiar autohospedable para AdGuard Home y Nintendo Switch. Lee los clientes y sus ajustes dinámicamente, gestiona la configuración global y las personalizaciones y permite solicitar y aprobar excepciones temporales.
 
 ## Instalar desde Docker Hub
 
-Una vez publicada la imagen `<usuario-dockerhub>/adguard-familia`:
+Una vez publicada la imagen `<usuario-dockerhub>/parental`:
 
 1. Descarga `compose.yaml` y `.env.example` de este repositorio.
 2. Copia `.env.example` a `.env`, introduce `DOCKERHUB_USERNAME` y sustituye `APP_TOKEN` por una clave aleatoria.
@@ -86,9 +86,9 @@ Pruebas de caducidad tras reinicio, permisos simultáneos, herencia global, camb
 El workflow `.github/workflows/docker.yml` ejecuta pruebas y publica imágenes multi arquitectura desde `main` y etiquetas `v*`. En GitHub → Settings → Secrets and variables → Actions configura:
 
 - Variable **DOCKERHUB_USERNAME**: usuario u organización de Docker Hub.
-- Secreto **DOCKERHUB_TOKEN**: token de Docker Hub con permisos de escritura al repositorio `adguard-familia`.
+- Secreto **DOCKERHUB_TOKEN**: token de Docker Hub con permisos de escritura al repositorio `parental`.
 
-No subas el token a archivos ni commits. Crea el repositorio Docker Hub `adguard-familia` en tu cuenta y elige su visibilidad. Para publicar una versión estable, crea una etiqueta como `v0.2.0` después de superar las pruebas. Hasta que el workflow termine correctamente, la imagen no está disponible para instalar.
+No subas el token a archivos ni commits. Crea el repositorio Docker Hub `parental` en tu cuenta y elige su visibilidad. Para publicar una versión estable, crea una etiqueta como `v0.2.0` después de superar las pruebas. Hasta que el workflow termine correctamente, la imagen no está disponible para instalar.
 
 ## Diagnóstico de conexión
 
@@ -164,3 +164,20 @@ En **Ajustes → Parental → Mi perfil → Cambiar cara**, elige una cara y pul
 Activar avisos muestra el estado del permiso y los errores en el mismo bloque. Usa Probar aviso para comprobar la entrega. En iPhone/iPad: HTTPS, iOS/iPadOS 16.4 o posterior y Parental instalada en la pantalla de inicio. Esta entrega requiere que el panel esté abierto; los destinos externos y las acciones interactivas #48/#50 siguen pendientes. [Detalles, fuentes y licencias de iconos](docs/parental-perfiles-avisos-iconos.md).
 
 La burbuja del icono instalado utiliza Badging API cuando esté disponible y cuenta las solicitudes pendientes visibles para tu cuenta; se elimina al cerrar sesión. En Android depende del navegador y launcher y puede estar ligada a los avisos activos. No se promete actualización con el panel cerrado. Al pulsar un aviso, se abre y enfoca la solicitud de aprobación concreta o el cliente y servicio bloqueados; las aprobaciones siguen siendo explícitas y autenticadas.
+
+## Actualizar desde adguard-familia
+
+En el Compose de tu instalación actual cambia **las dos referencias de imagen**, incluidas preparar-datos y companion, a `jesusgarrigues/parental:latest` (o `${DOCKERHUB_USERNAME}/parental:${IMAGE_TAG:-latest}`). Conserva `.env`, el nombre del servicio, el volumen y el mismo directorio/nombre de proyecto Compose. Si cambias de directorio, utiliza `docker compose -p <nombre-del-proyecto-existente>` para seguir utilizando el volumen existente. Comprueba tu proyecto con `docker compose ls` y haz copia del volumen antes de actualizar.
+
+```sh
+docker compose pull
+docker compose up -d
+```
+
+No uses `down -v` ni crees un volumen nuevo para este cambio de nombre. Los datos, usuarios, solicitudes y conexiones permanecen en el volumen existente. El repositorio anterior de GitHub redirige a parental; Docker Hub conserva la imagen antigua, pero las nuevas publicaciones utilizan parental.
+
+## Iconos, imágenes y Authentik
+
+Los selectores contienen 91 iconos de clientes (Apple, Amazon/Alexa, redes, domótica y autohospedados) y 80 imágenes de usuarios, con categorías y búsqueda. [Catálogo y procedencia](docs/catalogos-apariencia.md).
+
+El acceso OIDC con Authentik se configura en **Ajustes → Parental → Acceso e identidad · Authentik**. Cada persona vincula su cuenta existente desde **Mi perfil → Acceso con Authentik**, confirmando la contraseña local, la identidad externa y después ambas cuentas. Roles, clientes, avatar e historial se conservan; no hay unión automática por email ni roles asignados por grupos externos. El acceso local sigue disponible para recuperación. [Guía de Authentik](docs/authentik.md).

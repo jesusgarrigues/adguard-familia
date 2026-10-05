@@ -3,17 +3,19 @@ from collections import deque
 import base64, copy, hashlib, hmac, ipaddress, json, os, sqlite3, threading, time, urllib.error, urllib.request
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, parse_qs
 from zoneinfo import ZoneInfo
 from http.cookies import SimpleCookie
 import auth
 import re
 import nintendo
+import oidc
 
 ROOT = Path(__file__).parent
 DATA = Path(os.getenv('DATA_DIR', '/data'))
 DATA.mkdir(parents=True, exist_ok=True)
 auth.init(DATA)
+AUTHENTIK=oidc.Connector(DATA)
 NINTENDO=nintendo.Connector(DATA)
 TOKEN = os.environ.get('APP_TOKEN', '')
 LOCK = threading.RLock()
@@ -33,10 +35,13 @@ BOOL_KEYS = ('use_global_settings','filtering_enabled','parental_enabled','safeb
 CLIENT_KEYS = set(BOOL_KEYS) | {'name','ids','safe_search','blocked_services_schedule','blocked_services','upstreams','tags','upstreams_cache_size'}
 RESTRICTIONS = {'@filtering':'filtering_enabled','@parental':'parental_enabled','@safebrowsing':'safebrowsing_enabled','@safesearch':'safe_search'}
 POLICY_KEYS = ('use_global_settings','filtering_enabled','parental_enabled','safebrowsing_enabled','safe_search','safesearch_enabled','use_global_blocked_services','blocked_services','blocked_services_schedule')
-DEVICE_ICONS = ('monitor','laptop','smartphone','tablet','gamepad-2','tv','router','printer','speaker','headphones','watch','server')
+APPEARANCE_CATALOG = json.loads((ROOT/'assets/appearance-catalog.json').read_text())
+DEVICE_ICONS = tuple(item['id'] for item in APPEARANCE_CATALOG['devices'])
 SERVICE_LOGOS = json.loads((ROOT/'assets/service-catalog.json').read_text())
 SERVICE_ARTWORK = json.loads((ROOT/'assets/service-artwork.json').read_text())
 STATIC_ASSETS = {
+    '/assets/appearance-catalog.js': ('assets/appearance-catalog.js','application/javascript'),
+    '/assets/authentik.js': ('assets/authentik.js','application/javascript'),
     '/assets/identity.js': ('assets/identity.js','application/javascript'),
     '/assets/notifications.js': ('assets/notifications.js','application/javascript'),
     '/assets/notification-targets.js': ('assets/notification-targets.js','application/javascript'),
@@ -50,7 +55,7 @@ STATIC_ASSETS = {
     '/assets/fonts/InterVariable.woff2': ('assets/fonts/InterVariable.woff2','font/woff2'),
     **{'/assets/icons/'+icon+'.svg': ('assets/icons/'+icon+'.svg','image/svg+xml') for icon in DEVICE_ICONS},
     **{'/assets/avatars/'+avatar+'.svg': ('assets/avatars/'+avatar+'.svg','image/svg+xml') for avatar in auth.AVATARS if avatar},
-    **{'/assets/licenses/'+name+'.txt': ('assets/licenses/'+name+'.txt','text/plain') for name in ('inter','lucide','hostlists-registry','parental-artwork')},
+    **{'/assets/licenses/'+name+'.txt': ('assets/licenses/'+name+'.txt','text/plain') for name in ('inter','lucide','hostlists-registry','parental-artwork','simple-icons','dashboard-icons')},
 }
 
 
@@ -62,9 +67,14 @@ def appearance_identity(client, provider='adguard'):
 
 def automatic_icon(client, provider='adguard'):
     if provider=='nintendo': return 'gamepad-2'
+    name=client['name'].lower()
+    hinted=sorted(((hint,item['id']) for item in APPEARANCE_CATALOG['devices'] for hint in item.get('hints',[])),key=lambda x:len(x[0]),reverse=True)
+    model=next((icon for hint,icon in hinted if hint in name),None)
     kinds={'device_phone':'smartphone','device_tablet':'tablet','device_tv':'tv','device_router':'router','device_printer':'printer','device_gameconsole':'gamepad-2'}
+    compatible={'device_phone':{'iphone','iphone-classic'},'device_tablet':{'ipad','ipad-pro'},'device_tv':{'apple-tv','fire-tv','fire-tv-stick','fire-tv-lite','fire-tv-4k','fire-tv-4k-max','fire-tv-cube'},'device_router':{'wifi-ap','mesh','network-switch','firewall'}}
     for tag in client.get('tags',[]):
-        if tag in kinds: return kinds[tag]
+        if tag in kinds: return model if model in compatible.get(tag,set()) else kinds[tag]
+    if model: return model
     name=client['name'].lower()
     for pattern,icon in ((r'ipad|tablet','tablet'),(r'iphone|android|móvil|movil|phone','smartphone'),(r'macbook|laptop|portátil|portatil','laptop'),(r'imac|ordenador|desktop|\bpc\b','monitor'),(r'switch|xbox|playstation|consola','gamepad-2'),(r'televisi|\btv\b','tv'),(r'router|wifi','router'),(r'impresora|printer','printer'),(r'altavoz|speaker','speaker'),(r'auriculares|headphone','headphones'),(r'reloj|watch','watch')):
         if re.search(pattern,name): return icon
@@ -557,6 +567,26 @@ class Handler(BaseHTTPRequestHandler):
         try: cookie.load(self.headers.get('Cookie',''))
         except Exception: return ''
         return cookie['session'].value if 'session' in cookie else ''
+    def oidc_binding(self):
+        cookie=SimpleCookie()
+        try: cookie.load(self.headers.get('Cookie',''))
+        except Exception: return ''
+        return cookie[oidc.COOKIE].value if oidc.COOKIE in cookie else ''
+    def oidc_redirect(self,target,binding=None,token=None,clear=False):
+        self.send_response(303)
+        self.send_header('Location',target)
+        self.send_header('Cache-Control','no-store')
+        self.send_header('Referrer-Policy','no-referrer')
+        if binding is not None: self.send_header('Set-Cookie',oidc.COOKIE+'='+binding+'; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600')
+        if clear: self.send_header('Set-Cookie',oidc.COOKIE+'=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0')
+        if token: self.send_header('Set-Cookie','session='+token+'; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=43200')
+        self.end_headers()
+    def oidc_start_response(self,url,binding):
+        self.send_response(200)
+        self.send_header('Set-Cookie',oidc.COOKIE+'='+binding+'; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600')
+        self.send_header('Content-Type','application/json')
+        self.send_header('Cache-Control','no-store');self.end_headers()
+        self.wfile.write(json.dumps({'url':url}).encode())
     def user(self): return auth.session(self.cookie_token())
     def session_response(self,token,csrf,user):
         self.send_response(200)
@@ -579,16 +609,37 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond(200,SERVICE_ARTWORK[service].encode(),'image/svg+xml')
         if asset_path in assets:
             file,mime=assets[asset_path];return self.respond(200,(ROOT/file).read_bytes(),mime)
-        if self.path=='/api/auth/status': return self.respond(200,{'configured':auth.configured()})
+        if self.path=='/api/auth/status': return self.respond(200,{'configured':auth.configured(),'authentik':auth.configured() and AUTHENTIK.login_enabled()})
+        if asset_path in ('/api/auth/oidc/start',oidc.CALLBACK):
+            try:
+                query=parse_qs(urlsplit(self.path).query)
+                if asset_path=='/api/auth/oidc/start':
+                    url,binding=AUTHENTIK.begin(query.get('target',['/'])[0],ip=self.client_address[0])
+                    return self.oidc_redirect(url,binding=binding)
+                if any(len(values)!=1 for values in query.values()) or query.get('error'):
+                    raise oidc.OIDCError('Authentik canceló el acceso o devolvió una respuesta inválida')
+                result=AUTHENTIK.callback(query.get('state',[''])[0],query.get('code',[''])[0],self.oidc_binding())
+                return self.oidc_redirect(result['target'],token=result.get('token'),clear=not result['link'])
+            except (oidc.OIDCError,auth.Forbidden) as error:
+                import html
+                content=('<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Parental · Authentik</title><link rel="stylesheet" href="/assets/parental.css"><main style="max-width:560px;margin:48px auto;padding:24px"><h1>No se pudo completar el acceso</h1><p>'+html.escape(str(error))+'</p><a href="/">Volver a Parental</a></main></html>').encode()
+                return self.respond(400,content,'text/html')
+            except Exception:
+                return self.respond(502,{'error':'No se pudo completar Authentik. Vuelve a Parental e inicia de nuevo'})
         user=self.user()
         if not user: return self.respond(401,{'error':'Inicia sesión para continuar'})
         try:
             if self.path=='/api/me': return self.respond(200,{'user':user,'csrf':user['csrf']})
+            if self.path=='/api/me/authentik': return self.respond(200,AUTHENTIK.status(user,self.cookie_token(),self.oidc_binding()))
+            if self.path=='/api/authentik/config':
+                auth.require(user,'admin');return self.respond(200,AUTHENTIK.public_config())
             if self.path in ('/api/diagnostics','/api/server','/api/users','/api/audit'):
                 auth.require(user,'admin')
                 if self.path=='/api/diagnostics': return self.respond(200,{'entries':list(DIAGNOSTICS),'last_error':LAST_ERROR})
                 if self.path=='/api/server': return self.respond(200,public_server())
-                if self.path=='/api/users': return self.respond(200,{'users':[auth.public(r) for r in auth.DB.execute('SELECT * FROM users')]})
+                if self.path=='/api/users':
+                    linked={r['user_id'] for r in auth.DB.execute('SELECT user_id FROM external_identities')}
+                    return self.respond(200,{'users':[dict(auth.public(r),authentik_linked=r['id'] in linked) for r in auth.DB.execute('SELECT * FROM users')]})
                 if self.path=='/api/audit': return self.respond(200,{'entries':[dict(r) for r in auth.DB.execute('SELECT a.*,u.username FROM audit a LEFT JOIN users u ON a.user_id=u.id ORDER BY a.id DESC LIMIT 200')]})
             if self.path=='/api/requests': return self.respond(200,{'requests':auth.requests_for(user)})
             if self.path=='/api/nintendo/config':
@@ -600,6 +651,7 @@ class Handler(BaseHTTPRequestHandler):
                 with LOCK: return self.respond(200,scoped_state(user))
             self.respond(404,{'error':'No encontrado'})
         except nintendo.NintendoError as e: self.respond(502,{'error':str(e)})
+        except oidc.OIDCError as e: self.respond(400,{'error':str(e)})
         except auth.Forbidden as e: self.respond(403,{'error':str(e)})
         except AdGuardError as e: self.respond(502,{'error':str(e),'diagnostic':e.detail})
         except Exception: self.respond(502,{'error':'No se puede leer AdGuard. Revisa el diagnóstico en Servidor.'})
@@ -614,6 +666,14 @@ class Handler(BaseHTTPRequestHandler):
             user=self.user()
             if not user: return self.respond(401,{'error':'Inicia sesión para continuar'})
             if not hmac.compare_digest(self.headers.get('X-CSRF-Token',''),user['csrf']): raise auth.Forbidden('Sesión inválida. Vuelve a entrar')
+            if self.path=='/api/me/authentik/start':
+                url,binding=AUTHENTIK.begin('/?view=settings',user,self.cookie_token(),body.get('password'),self.client_address[0])
+                return self.oidc_start_response(url,binding)
+            if self.path in ('/api/me/authentik/confirm','/api/me/authentik/cancel'):
+                return self.respond(200,AUTHENTIK.confirm(user,body.get('confirmation'),self.cookie_token(),self.oidc_binding(),cancel=self.path.endswith('/cancel')))
+            if self.path=='/api/me/authentik/unlink': return self.respond(200,AUTHENTIK.unlink(user,body,self.client_address[0]))
+            if self.path=='/api/authentik/config': return self.respond(200,AUTHENTIK.save(user,body,self.client_address[0]))
+            if self.path=='/api/authentik/test': return self.respond(200,AUTHENTIK.test(user))
             if self.path=='/api/auth/logout': auth.logout(self.cookie_token());return self.respond(200,{'ok':True})
             if self.path=='/api/me/avatar':
                 if set(body)-{'avatar'}: raise ValueError('Solo puedes cambiar tu cara desde este formulario')

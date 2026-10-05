@@ -15,4 +15,8 @@ for file in ('compose.yaml','compose.build.yaml'):
         assert published['target']==8080,published
         assert str(published['published'])==(port or '8080'),published
         assert published['host_ip']=='127.0.0.1',published
+        if file=='compose.yaml':
+            assert data['services']['companion']['image']=='jesusgarrigues/parental:latest'
+            assert data['services']['preparar-datos']['image']=='jesusgarrigues/parental:latest'
+        assert data['services']['companion']['volumes'][0]['source']=='companion-data'
 print('Compose: default/custom host port validated in both installation variants; internal port remains 8080')
