@@ -235,7 +235,7 @@ const calls=[];let adguardDown=false,clientFailure=null,readFailures=0,saveDelay
  for(const width of [320,375,390,430]){
   await page.setViewportSize({width,height:844});assert.ok(await page.locator('.mobile-nav').isVisible());assert.equal(await page.locator('.mobile-nav .nav').count(),4);
   const bounds=await page.locator('.mobile-nav .nav').evaluateAll(nodes=>nodes.every(n=>{const r=n.getBoundingClientRect();return r.width>=44&&r.height>=44&&r.left>=0&&r.right<=innerWidth}));assert.ok(bounds,'Mobile navigation does not fit at '+width);
-  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Page overflow at '+width);
+  const overflow=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,nodes:[...document.body.querySelectorAll('*')].filter(n=>n.getClientRects().length&&n.getBoundingClientRect().right>innerWidth+1).map(n=>({tag:n.tagName,id:n.id,cls:n.getAttribute('class'),right:n.getBoundingClientRect().right,width:n.clientWidth,scroll:n.scrollWidth,text:n.textContent.slice(0,100)})).slice(0,25)}));if(overflow.scroll>width+1){console.log('OVERFLOW',JSON.stringify(overflow));await page.screenshot({path:shots+'/parental-overflow-'+width+'.png'})}assert.ok(overflow.scroll<=width+1,'Page overflow at '+width);
  }
  await page.setViewportSize({width:390,height:844});await page.locator('.mobile-nav [data-page="settings"]').click();
  assert.ok(await page.getByRole('heading',{name:'Ajustes',exact:true}).isVisible());assert.equal(await page.getByRole('button',{name:'Servidores e integraciones ›',exact:true}).count(),0);
