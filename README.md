@@ -17,7 +17,7 @@ docker compose pull
 docker compose up -d
 ```
 
-Abre http://localhost:8080, crea el primer administrador usando APP_TOKEN y configura la URL, usuario y contraseña de AdGuard en **Servidor**. Puedes probar la conexión antes de guardarla. La configuración se conserva en el volumen; la contraseña no se devuelve al navegador. Puedes usar variables ADGUARD_* en .env como configuración inicial.
+Abre http://localhost:8080, crea el primer administrador usando APP_TOKEN y configura la URL, usuario y contraseña de AdGuard en **Ajustes → Integraciones → AdGuard Home**. Puedes probar la conexión antes de guardarla. La configuración se conserva en el volumen; la contraseña no se devuelve al navegador. Puedes usar variables ADGUARD_* en .env como configuración inicial.
 
 Para cambiar el puerto publicado, define `APP_PORT=8090` (o el puerto que prefieras) en `.env` y ejecuta `docker compose up -d`. El contenedor y su comprobación de salud siguen usando 8080 internamente. `BIND_ADDRESS` conserva su función. Si tu Compose anterior tenía un puerto personalizado escrito directamente, pasa ese valor a `APP_PORT` antes de reemplazar el archivo para conservarlo.
 
@@ -40,7 +40,7 @@ AdGuard tiene dos grupos independientes:
 
 Cada ficha muestra las restricciones configuradas y permite levantarlas temporalmente, por ejemplo YouTube durante 20 minutos para el iMac de Emma. Un permiso crea una personalización temporal únicamente en el grupo correspondiente; al vencer vuelve a la configuración permanente y a su herencia. Mientras dura, los ajustes heredados siguen los cambios globales actuales.
 
-La vista principal usa tarjetas compactas con nombre, icono, servicios restringidos y permisos con tiempo restante. Al pulsar una tarjeta se abre su detalle: excepciones activas visibles al principio, **Favoritos** para lo habitual, **Todos los servicios** con buscador y categorías para listas largas y **Ajustes** con la configuración del cliente. Los favoritos se guardan por cuenta y cliente en ese navegador. Los iconos del catálogo se obtienen de AdGuard, se filtran antes de mostrarlos y usan un icono de categoría cuando no hay uno disponible. La misma distribución se adapta al móvil.
+La vista principal usa tarjetas compactas con nombre, icono, servicios restringidos y permisos con tiempo restante. Al pulsar una tarjeta se abre su detalle: excepciones activas visibles al principio, **Favoritos** para lo habitual, **Todos los servicios** con buscador y categorías para listas largas y **Ajustes** con la configuración del cliente. Los favoritos se guardan por cuenta y cliente en ese navegador. Los 142 servicios conocidos usan logos locales con colores de marca. Un servicio nuevo usa el SVG saneado enviado por AdGuard o un icono de categoría. La lista de servicios siempre se obtiene de la instancia conectada. La misma distribución se adapta al móvil.
 
 **Configurar cliente** incluye nombre, identificadores IP/CIDR/MAC/ClientID, etiquetas, ambas herencias, filtrado, navegación segura, control parental, búsqueda segura por motor, servicios, pausas semanales, zona horaria, DNS propios, caché y exclusión de registros y estadísticas. Usa la API de clientes de AdGuard Home; los campos que no se editan se conservan.
 
@@ -92,7 +92,7 @@ No subas el token a archivos ni commits. Crea el repositorio Docker Hub `adguard
 
 ## Diagnóstico de conexión
 
-En **Servidor**, usa **Probar conexión** y **Actualizar diagnóstico**. El panel distingue HTTP 401/403/404, timeout, DNS, conexión rechazada, certificados y respuestas no JSON, indicando el endpoint. Los últimos 100 resultados se conservan en memoria; los fallos se registran también con `docker compose logs --tail=100 companion`. No se registran contraseñas ni cabeceras de autorización. La actualización automática se pausa en Servidor y mientras se editan formularios.
+En **Ajustes → Integraciones → AdGuard Home**, usa **Probar conexión** y **Actualizar diagnóstico**. El panel distingue HTTP 401/403/404, timeout, DNS, conexión rechazada, certificados y respuestas no JSON, indicando el endpoint. Los últimos 100 resultados se conservan en memoria; los fallos se registran también con `docker compose logs --tail=100 companion`. No se registran contraseñas ni cabeceras de autorización. La actualización automática se pausa en las conexiones de AdGuard y Nintendo y mientras se editan formularios.
 
 ## Usuarios, roles y solicitudes
 
@@ -135,7 +135,7 @@ Después recarga el navegador. Si iOS conserva el nombre o icono anterior del ac
 
 Esta integración conecta directamente con Nintendo Switch Parental Controls; no necesita Home Assistant. Se implementa mediante `pynintendoparental==2.6.3`, una biblioteca no oficial. Depende de la nube de Nintendo y la consola necesita Internet para sincronizar. No se incluyen integraciones asistidas.
 
-1. Entra como administrador y abre **Servidor → Nintendo**.
+1. Entra como administrador y abre **Ajustes → Integraciones → Nintendo**.
 2. Pulsa **Conectar Nintendo**. Se abre el inicio de sesión de la cuenta oficial; la contraseña no se introduce en esta app.
 3. Realiza el proceso en un ordenador/navegador sin la app oficial de controles parentales que capture la redirección. En la pantalla de selección de cuenta, copia la dirección del botón **Seleccionar esta persona**, sin abrirlo, y pégala en el formulario de conexión. Es un enlace sensible: no lo compartas en chat ni registros.
 4. Confirma la zona horaria de la consola, por defecto `Europe/Madrid`.
@@ -154,3 +154,13 @@ Las respuestas perdidas de operaciones anteriores se conservan sin repetirse. Se
 La integración requiere validar el inicio de sesión y la sincronización contra tu consola real. Las pruebas automatizadas verifican contratos de la biblioteca, alcance de roles, aprobación separada del descanso, conflictos, persistencia e idempotencia con un proveedor simulado; no equivalen a una prueba con una cuenta Nintendo real.
 
 Los tokens de conexión se guardan únicamente en el volumen `/data` con permisos restringidos; nunca se devuelven al navegador ni aparecen en los diagnósticos. Conserva el volumen en las actualizaciones.
+
+## Perfiles, avisos y ajustes por integración
+
+En **Ajustes → Parental → Mi perfil → Cambiar cara**, elige una cara y pulsa Guardar cara. Se conserva en el servidor y cambiar solo el avatar no cierra tus sesiones. El administrador también puede asignarlas en Usuarios y roles. Los dispositivos tienen doce ilustraciones originales a color, seleccionables desde su detalle; los servicios mantienen sus logos reconocibles y colores de marca.
+
+**Ajustes → Integraciones** separa AdGuard Home (conexión, diagnóstico y configuración global de AdGuard) de Nintendo (cuenta y sincronización). Los ajustes de cada cliente o consola siguen en su popup.
+
+Activar avisos muestra el estado del permiso y los errores en el mismo bloque. Usa Probar aviso para comprobar la entrega. En iPhone/iPad: HTTPS, iOS/iPadOS 16.4 o posterior y Parental instalada en la pantalla de inicio. Esta entrega requiere que el panel esté abierto; los destinos externos y las acciones interactivas #48/#50 siguen pendientes. [Detalles, fuentes y licencias de iconos](docs/parental-perfiles-avisos-iconos.md).
+
+La burbuja del icono instalado utiliza Badging API cuando esté disponible y cuenta las solicitudes pendientes visibles para tu cuenta; se elimina al cerrar sesión. En Android depende del navegador y launcher y puede estar ligada a los avisos activos. No se promete actualización con el panel cerrado. Al pulsar un aviso, se abre y enfoca la solicitud de aprobación concreta o el cliente y servicio bloqueados; las aprobaciones siguen siendo explícitas y autenticadas.

@@ -27,11 +27,19 @@ ui.setRequests([],null);assert.equal(badges[0].hidden,true);assert.equal(navigat
   caches:{open:async()=>cache,keys:async()=>['parental-static-old','other-app-cache'],delete:async key=>{deleted.push(key)}},
   fetch:async request=>{if(offline)throw Error('offline');const url=typeof request==='string'?request:request.url;return new Response('public resource '+url)}
  });
+ sw.importScripts=()=>vm.runInContext(fs.readFileSync('assets/notification-targets.js','utf8'),sw);
  vm.runInContext(fs.readFileSync('sw.js','utf8'),sw);
  let promise;handlers.install({waitUntil:p=>promise=p});await promise;
  assert.ok(storage.has('/apple-touch-icon.png'));assert.ok(storage.has('/assets/parental.css'));
  assert.ok([...storage.keys()].every(key=>!key.startsWith('/api/')&&key!=='/'));
  handlers.activate({waitUntil:p=>promise=p});await promise;assert.deepEqual(deleted,['parental-static-old']);
+ const posted=[],opened=[];let focused=0;
+ sw.self.clients.matchAll=async()=>[{url:'https://parental.test/',visibilityState:'visible',postMessage:m=>posted.push(m),focus:async()=>{focused++}}];
+ handlers.notificationclick({notification:{data:{target:{kind:'request',id:9},url:'https://evil.test/'},close(){}},waitUntil:p=>promise=p});await promise;
+ assert.equal(posted[0].target.id,9);assert.equal(focused,1);
+ sw.self.clients.matchAll=async()=>[];sw.self.clients.openWindow=async url=>opened.push(url);
+ handlers.notificationclick({notification:{data:{target:{kind:'request',id:-1},url:'https://evil.test/'},close(){}},waitUntil:p=>promise=p});await promise;
+ assert.equal(opened[0],'https://parental.test/');
  for(const request of [
   {method:'GET',url:'https://parental.test/api/requests',mode:'cors'},
   {method:'POST',url:'https://parental.test/api/request/review',mode:'cors'},

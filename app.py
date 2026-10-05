@@ -34,7 +34,14 @@ CLIENT_KEYS = set(BOOL_KEYS) | {'name','ids','safe_search','blocked_services_sch
 RESTRICTIONS = {'@filtering':'filtering_enabled','@parental':'parental_enabled','@safebrowsing':'safebrowsing_enabled','@safesearch':'safe_search'}
 POLICY_KEYS = ('use_global_settings','filtering_enabled','parental_enabled','safebrowsing_enabled','safe_search','safesearch_enabled','use_global_blocked_services','blocked_services','blocked_services_schedule')
 DEVICE_ICONS = ('monitor','laptop','smartphone','tablet','gamepad-2','tv','router','printer','speaker','headphones','watch','server')
+SERVICE_LOGOS = json.loads((ROOT/'assets/service-catalog.json').read_text())
+SERVICE_ARTWORK = json.loads((ROOT/'assets/service-artwork.json').read_text())
 STATIC_ASSETS = {
+    '/assets/identity.js': ('assets/identity.js','application/javascript'),
+    '/assets/notifications.js': ('assets/notifications.js','application/javascript'),
+    '/assets/notification-targets.js': ('assets/notification-targets.js','application/javascript'),
+    '/assets/app-badges.js': ('assets/app-badges.js','application/javascript'),
+    '/assets/service-logos.js': ('assets/service-logos.js','application/javascript'),
     '/assets/parental.css': ('assets/parental.css','text/css'),
     '/assets/app.css': ('assets/app.css','text/css'),
     '/assets/app-shell.js': ('assets/app-shell.js','application/javascript'),
@@ -42,7 +49,8 @@ STATIC_ASSETS = {
     '/assets/client-settings.js': ('assets/client-settings.js','application/javascript'),
     '/assets/fonts/InterVariable.woff2': ('assets/fonts/InterVariable.woff2','font/woff2'),
     **{'/assets/icons/'+icon+'.svg': ('assets/icons/'+icon+'.svg','image/svg+xml') for icon in DEVICE_ICONS},
-    **{'/assets/licenses/'+name+'.txt': ('assets/licenses/'+name+'.txt','text/plain') for name in ('inter','lucide')},
+    **{'/assets/avatars/'+avatar+'.svg': ('assets/avatars/'+avatar+'.svg','image/svg+xml') for avatar in auth.AVATARS if avatar},
+    **{'/assets/licenses/'+name+'.txt': ('assets/licenses/'+name+'.txt','text/plain') for name in ('inter','lucide','hostlists-registry','parental-artwork')},
 }
 
 
@@ -566,6 +574,9 @@ class Handler(BaseHTTPRequestHandler):
         assets={'/':('index.html','text/html'),'/manifest.webmanifest':('manifest.webmanifest','application/manifest+json'),'/sw.js':('sw.js','application/javascript'),'/apple-touch-icon.png':('apple-touch-icon.png','image/png'),'/favicon.png':('favicon.png','image/png'),'/icon.svg':('icon.svg','image/svg+xml'),'/icon-192.png':('icon-192.png','image/png'),'/icon-512.png':('icon-512.png','image/png')}
         assets.update(STATIC_ASSETS)
         asset_path=urlsplit(self.path).path
+        service=asset_path.removeprefix('/assets/services/').removesuffix('.svg')
+        if asset_path=='/assets/services/'+service+'.svg' and service in SERVICE_ARTWORK:
+            return self.respond(200,SERVICE_ARTWORK[service].encode(),'image/svg+xml')
         if asset_path in assets:
             file,mime=assets[asset_path];return self.respond(200,(ROOT/file).read_bytes(),mime)
         if self.path=='/api/auth/status': return self.respond(200,{'configured':auth.configured()})
@@ -604,6 +615,12 @@ class Handler(BaseHTTPRequestHandler):
             if not user: return self.respond(401,{'error':'Inicia sesión para continuar'})
             if not hmac.compare_digest(self.headers.get('X-CSRF-Token',''),user['csrf']): raise auth.Forbidden('Sesión inválida. Vuelve a entrar')
             if self.path=='/api/auth/logout': auth.logout(self.cookie_token());return self.respond(200,{'ok':True})
+            if self.path=='/api/me/avatar':
+                if set(body)-{'avatar'}: raise ValueError('Solo puedes cambiar tu cara desde este formulario')
+                return self.respond(200,{'user':auth.save_avatar(user,body)})
+            if self.path=='/api/users/avatar':
+                auth.require(user,'admin')
+                return self.respond(200,{'user':auth.save_avatar(user,body)})
             if self.path=='/api/client/icon':
                 with LOCK: return self.respond(200,save_client_icon(user,body['client'],body['icon']))
             if self.path=='/api/nintendo/operation/close':

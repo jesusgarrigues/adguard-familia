@@ -50,6 +50,12 @@ try:
     admin.call('auth/setup',{'token':initial,'username':'admin','password':'admin-password-1234'})
     for name,role in [('emma','solicitante'),('parent','responsable'),('observer','observador')]:admin.call('users',{'username':name,'password':name+'-password-1234','role':role,'clients':['iMac de Emma'],'max_minutes':60})
     child=Client();child.call('auth/login',{'username':'emma','password':'emma-password-1234'})
+    changed=child.call('me/avatar',{'avatar':'face-08'})
+    assert changed['user']['avatar']=='face-08' and changed['user']['role']=='solicitante'
+    assert child.call('me')['user']['avatar']=='face-08'
+    child.call('me/avatar',{'avatar':'face-99'},400)
+    child.call('me/avatar',{'avatar':'face-08','role':'admin'},400)
+    child.call('users/avatar',{'user_id':1,'avatar':'face-04'},403)
     state=child.call('state');assert [c['name'] for c in state['clients']]==['iMac de Emma'];assert state['events']==[];assert state['server']=={}
     child.call('permit',{'client':'iMac de Emma','service':'youtube','minutes':20},403)
     child.call('global',{'patch':{}},403)
@@ -124,7 +130,7 @@ try:
     assert recovered['extra_minutes']==75 and recovered['pending_operation'] is None
     assert recovered['last_read_at']>0
     assert observer.call('nintendo/state')['devices']==[]
-    for path in ('manifest.webmanifest','sw.js','icon-192.png','icon-512.png','apple-touch-icon.png','favicon.png','assets/app.css','assets/parental.css','assets/app-shell.js','assets/client-settings.js','assets/fonts/InterVariable.woff2','assets/icons/tv.svg'):
+    for path in ('manifest.webmanifest','sw.js','icon-192.png','icon-512.png','apple-touch-icon.png','favicon.png','assets/app.css','assets/parental.css','assets/app-shell.js','assets/client-settings.js','assets/identity.js','assets/notifications.js','assets/service-logos.js','assets/fonts/InterVariable.woff2','assets/icons/tv.svg','assets/avatars/face-08.svg','assets/services/youtube.svg','assets/services/manus.svg'):
         with urllib.request.urlopen('http://127.0.0.1:8080/'+path) as response:assert response.status==200
     import struct
     for path,size in (('icon-192.png',192),('icon-512.png',512),('apple-touch-icon.png',180),('favicon.png',64)):

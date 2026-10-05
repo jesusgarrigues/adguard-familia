@@ -1,14 +1,1 @@
-<svg
-  xmlns="http://www.w3.org/2000/svg"
-  width="24"
-  height="24"
-  viewBox="0 0 24 24"
-  fill="none"
-  stroke="#0f766e"
-  stroke-width="2"
-  stroke-linecap="round"
-  stroke-linejoin="round"
->
-  <path d="M18 5a2 2 0 0 1 2 2v8.526a2 2 0 0 0 .212.897l1.068 2.127a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45l1.068-2.127A2 2 0 0 0 4 15.526V7a2 2 0 0 1 2-2z" />
-  <path d="M20.054 15.987H3.946" />
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96"><defs><linearGradient id="paint" x2=".8" y2="1"><stop stop-color="#72C8FF"/><stop offset="1" stop-color="#6275ED"/></linearGradient><linearGradient id="metal" x2="0" y2="1"><stop stop-color="#F1F5FC"/><stop offset="1" stop-color="#AAB8D0"/></linearGradient><linearGradient id="screen" x2="1" y2="1"><stop stop-color="#74E4FF"/><stop offset="1" stop-color="#4B5DED"/></linearGradient></defs><ellipse cx="48" cy="83" rx="32" ry="5" fill="#14294D" opacity=".12"/><rect x="16" y="17" width="64" height="48" rx="6" fill="#313B67"/><rect x="21" y="22" width="54" height="37" rx="2" fill="url(#screen)"/><path d="M16 65h64l10 12c2 4-3 7-8 7H14c-5 0-10-3-8-7z" fill="url(#metal)"/><path d="M21 68h54l5 7H16z" fill="#929EB8"/><rect x="37" y="76" width="22" height="4" rx="2" fill="#C0CBDE"/></svg>

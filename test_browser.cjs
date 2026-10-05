@@ -14,9 +14,9 @@ const clients=['iMac de Emma','iMac de Martín','iPad familiar',...Array.from({l
 const effective={filtering_enabled:true,parental_enabled:true,safebrowsing_enabled:true,safe_search:safe,blocked_services:ids,blocked_services_schedule:{time_zone:'Europe/Madrid'},protection_enabled:true};
 const state={clients,base_clients:Object.fromEntries(clients.map(c=>[c.name,c])),effective:Object.fromEntries(clients.map(c=>[c.name,effective])),base_effective:Object.fromEntries(clients.map(c=>[c.name,effective])),services,global_config:globalConfig,leases:[{client:'iMac de Emma',service:'youtube',expires:Date.now()/1000+1200},{client:'iMac de Emma',service:'service_44',expires:Date.now()/1000+1800}],events:[],requests:[],supported_tags:['device_pc','device_phone','user_child'],auto_clients:[],server:{},demo:true,error:''};
 const native={configured:true,devices:[{id:'ABC',key:'nintendo:ABC',name:'Switch de Martín',model:'Switch',used_minutes:0,remaining_minutes:5,limit_minutes:0,extra_minutes:5,bedtime:'20:00',forced_termination:true,alarms_enabled:false,last_sync:Date.now()/1000,console_sync_pending:false,available:true,can_grant:true,can_cancel:true,pending_operation:null,daily_extra_minutes:5,budget_remaining_minutes:5,bedtime_remaining_minutes:600,base_bedtime:'20:00',bedtime_start:'06:00',native_policy:{timerMode:'DAILY',restrictionMode:'FORCED_TERMINATION',dailyRegulations:{timeToPlayInOneDay:{enabled:true,limitTime:0},bedtime:{enabled:true,endingTime:{hour:20,minute:0},startingTime:{hour:6,minute:0}}},eachDayOfTheWeekRegulations:{}},policy_revision:'fixture-revision'}]};
-const requests=[{id:1,user_id:2,username:'martin',client:'nintendo:ABC',service:'@nintendo',minutes:20,reason:'Jugar con mis amigos',status:'pending',created:Date.now()/1000,extend_bedtime:true,approved_extend_bedtime:null}];
+const requests=[{id:1,user_id:2,username:'martin',avatar:'face-04',client:'nintendo:ABC',service:'@nintendo',minutes:20,reason:'Jugar con mis amigos',status:'pending',created:Date.now()/1000,extend_bedtime:true,approved_extend_bedtime:null}];
 state.requests=requests;
-const user={id:1,username:'admin',role:'admin',clients:[],edit_policy:true,max_minutes:1440};
+const user={id:1,username:'admin',avatar:'face-01',role:'admin',clients:[],edit_policy:true,max_minutes:1440};
 const calls=[];let adguardDown=false,clientFailure=null,readFailures=0,saveDelay=0;
 (async()=>{
  const browser=await chromium.launch({executablePath:process.env.CHROMIUM_EXECUTABLE||['/usr/bin/chromium','/usr/bin/google-chrome','/opt/google/chrome/chrome'].find(fs.existsSync),headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--disable-breakpad','--disable-crash-reporter']});
@@ -36,6 +36,7 @@ const calls=[];let adguardDown=false,clientFailure=null,readFailures=0,saveDelay
     state.base_clients[original.name]=original;if(original.name!==body.client)delete state.base_clients[body.client];
     state.base_effective[original.name]={...effective,blocked_services:original.use_global_blocked_services?ids:original.blocked_services};
    }
+   if(path==='me/avatar'&&body){user.avatar=body.avatar;return route.fulfill({contentType:'application/json',body:JSON.stringify({user})});}
    if(path==='client/icon'&&body){const device=body.client.startsWith('nintendo:')?native.devices.find(d=>d.key===body.client):state.clients.find(c=>c.name===body.client);device.ui_icon=body.icon==='auto'?null:body.icon;}
    if(path==='nintendo/operation/close'&&body){
     const previous=native.devices[0].pending_operation;
@@ -43,11 +44,12 @@ const calls=[];let adguardDown=false,clientFailure=null,readFailures=0,saveDelay
     native.devices[0].last_operation={...previous,operation_id:body.operation_id,status:'superseded',message:'Seguimiento cerrado sin reenviar tiempo.'};
     return route.fulfill({contentType:'application/json',body:JSON.stringify(native.devices[0].last_operation)});
    }
-   const data=path==='me'?{user,csrf:'fixture-csrf'}:path==='state'?state:path==='nintendo/state'?native:path==='requests'?{requests}:path==='auth/status'?{configured:true}:path==='nintendo/config'?{configured:true,timezone:'Europe/Madrid'}:path==='server'?{url:'http://192.168.1.2:3000',username:'admin',demo:true}:path==='diagnostics'?{entries:[]}:body?{ok:true,status:['permit','cancel','nintendo/policy'].includes(path)?'confirmed':undefined}:{ok:true};
+   const data=path==='me'?{user,csrf:'fixture-csrf'}:path==='state'?state:path==='nintendo/state'?native:path==='requests'?{requests}:path==='auth/status'?{configured:true}:path==='nintendo/config'?{configured:true,timezone:'Europe/Madrid'}:path==='server'?{url:'http://192.168.1.2:3000',username:'admin',demo:true}:path==='diagnostics'?{entries:[]}:path==='users'?{users:[user]}:path==='devices'?{devices:clients.map(c=>({key:c.name,name:c.name,provider:'adguard'}))}:body?{ok:true,status:['permit','cancel','nintendo/policy'].includes(path)?'confirmed':undefined}:{ok:true};
    return route.fulfill({contentType:'application/json',body:JSON.stringify(data)});
   }
   if(url.pathname==='/')return route.fulfill({contentType:'text/html',body:fs.readFileSync(root+'/index.html','utf8')});
   if(['/manifest.webmanifest','/sw.js','/icon-192.png','/icon-512.png','/apple-touch-icon.png','/favicon.png','/icon.svg'].includes(url.pathname)){const file=root+url.pathname;return route.fulfill({contentType:file.endsWith('.png')?'image/png':file.endsWith('.webmanifest')?'application/manifest+json':file.endsWith('.js')?'application/javascript':'image/svg+xml',body:fs.readFileSync(file)});}
+  if(url.pathname.startsWith('/assets/services/')){const id=url.pathname.split('/').at(-1).replace('.svg','');const art=JSON.parse(fs.readFileSync(root+'/assets/service-artwork.json','utf8'))[id];if(art)return route.fulfill({contentType:'image/svg+xml',body:art});}
   if(url.pathname.startsWith('/assets/')){
    const file=root+url.pathname;if(fs.existsSync(file))return route.fulfill({contentType:file.endsWith('.css')?'text/css':file.endsWith('.js')?'application/javascript':file.endsWith('.woff2')?'font/woff2':'image/svg+xml',body:fs.readFileSync(file)});
   }
@@ -238,7 +240,7 @@ const calls=[];let adguardDown=false,clientFailure=null,readFailures=0,saveDelay
   const overflow=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,nodes:[...document.body.querySelectorAll('*')].filter(n=>n.getClientRects().length&&n.getBoundingClientRect().right>innerWidth+1).map(n=>({tag:n.tagName,id:n.id,cls:n.getAttribute('class'),right:n.getBoundingClientRect().right,width:n.clientWidth,scroll:n.scrollWidth,text:n.textContent.slice(0,100)})).slice(0,25)}));if(overflow.scroll>width+1){console.log('OVERFLOW',JSON.stringify(overflow));await page.screenshot({path:shots+'/parental-overflow-'+width+'.png'})}assert.ok(overflow.scroll<=width+1,'Page overflow at '+width);
  }
  await page.setViewportSize({width:390,height:844});await page.locator('.mobile-nav [data-page="settings"]').click();
- assert.ok(await page.getByRole('heading',{name:'Ajustes',exact:true}).isVisible());assert.equal(await page.getByRole('button',{name:'Servidores e integraciones ›',exact:true}).count(),0);
+ assert.ok(await page.getByRole('heading',{name:'Ajustes',exact:true}).isVisible());assert.equal(await page.getByRole('button',{name:'Conexión de AdGuard ›',exact:true}).count(),0);
  await page.waitForFunction(()=>document.querySelector('#install-settings .install-icon').complete);
  assert.ok(await page.locator('#install-settings .install-icon').evaluate(img=>img.complete&&img.naturalWidth===180));
  await page.screenshot({path:shots+'/parental-movil-ajustes.png'});
@@ -252,11 +254,56 @@ const calls=[];let adguardDown=false,clientFailure=null,readFailures=0,saveDelay
  await page.evaluate(()=>{Object.defineProperty(navigator,'standalone',{value:true,configurable:true});dispatchEvent(new Event('appinstalled'));go('settings')});
  assert.equal(await page.locator('#install-banner').isVisible(),false);assert.ok((await page.locator('#install-settings').innerText()).includes('ya está abierta'));
  await page.evaluate(()=>{Object.defineProperty(navigator,'standalone',{value:false,configurable:true});me={...me,role:'admin'};go('settings')});
- assert.ok(await page.getByRole('button',{name:'Servidores e integraciones ›',exact:true}).isVisible());await page.getByRole('button',{name:'Servidores e integraciones ›',exact:true}).click();await page.locator('#s-url').waitFor();
+ assert.ok(await page.getByRole('button',{name:'Conexión de AdGuard ›',exact:true}).isVisible());await page.getByRole('button',{name:'Conexión de AdGuard ›',exact:true}).click();await page.locator('#s-url').waitFor();
+ // Avatars, independent integrations, permission feedback and brand artwork.
+ await page.evaluate(()=>go('settings'));
+ await page.getByText('Cambiar cara',{exact:true}).click();
+ await page.locator('[data-avatar="face-06"]').click();
+ await page.getByRole('button',{name:'Guardar cara',exact:true}).click();
+ await page.getByText('Cara guardada.',{exact:true}).waitFor();
+ assert.equal(await page.locator('.account-avatar').getAttribute('src'),'/assets/avatars/face-06.svg');
+ await page.reload();await page.locator('[data-client-card]').first().waitFor();
+ await page.evaluate(()=>go('settings'));assert.equal(await page.locator('.account-avatar').getAttribute('src'),'/assets/avatars/face-06.svg');
+ for(const width of [320,375,390,430]){await page.setViewportSize({width,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Settings overflow at '+width);}
+ await page.getByRole('button',{name:'Conexión de Nintendo ›',exact:true}).click();await page.locator('#n-timezone').waitFor();assert.equal(await page.locator('#s-url').count(),0);
+ await page.getByRole('button',{name:'‹ Ajustes',exact:true}).click();
+ await page.getByRole('button',{name:'Conexión de AdGuard ›',exact:true}).click();await page.locator('#s-url').waitFor();assert.equal(await page.locator('#nintendo-settings').count(),0);
+ await page.getByRole('button',{name:'‹ Ajustes',exact:true}).click();
+ await page.evaluate(()=>{Object.defineProperty(navigator,'userAgent',{value:'Desktop test',configurable:true});const api={permission:'default',requestPermission:async()=>{throw Error('Error de prueba de permisos')}};Object.defineProperty(window,'Notification',{value:api,configurable:true});go('settings')});
+ await page.getByRole('button',{name:'Activar avisos',exact:true}).click();assert.ok((await page.locator('[data-notification-feedback]').innerText()).includes('Error de prueba de permisos'));
+ await page.screenshot({path:shots+'/parental-avisos-error.png'});
+ await page.evaluate(()=>{Object.defineProperty(window,'Notification',{value:{permission:'denied'},configurable:true});go('settings')});assert.equal(await page.locator('[data-notification-state]').innerText(),'Bloqueados');assert.equal(await page.getByRole('button',{name:'Activar avisos',exact:true}).isDisabled(),true);
+ await page.screenshot({path:shots+'/parental-ajustes-separados.png'});
+ await page.evaluate(()=>go('clients'));assert.equal(await page.locator('[data-client-card] .device-icon img').first().evaluate(n=>getComputedStyle(n).filter),'none');
+ const logos=await page.evaluate(()=>['youtube','spotify','discord','manus'].map(id=>{const n=serviceIcon(id);return {id,src:n.querySelector('img')?.getAttribute('src'),color:n.style.color}}));assert.ok(logos.every(n=>n.src==='/assets/services/'+n.id+'.svg'));assert.equal(logos[0].color,'rgb(255, 0, 0)');
  await page.evaluate(()=>{me={...me,role:'solicitante',id:2};go('requests')});await page.locator('[data-request-id="1"]').waitFor();assert.equal(await page.locator('.request-decisions').count(),0);assert.ok(await page.getByRole('button',{name:'Retirar solicitud',exact:true}).isVisible());
  await page.evaluate(()=>{me={...me,role:'responsable'};go('clients')});
  adguardDown=true;await page.evaluate(()=>{state=null;dirty=false;go('clients');return refresh(true)});assert.ok(await page.locator('[data-console="nintendo:ABC"]').isVisible());
  await page.screenshot({path:shots+'/parental-movil-clientes.png'});
+ adguardDown=false;await page.goto('https://preview.local/?view=requests#request=1');
+ await page.locator('[data-request-id="1"].notification-target').waitFor();
+ assert.ok(await page.getByRole('button',{name:'Aprobar 20 min',exact:true}).isVisible());assert.ok(!page.url().includes('#request='));
+ await page.evaluate(()=>go('settings'));await page.getByText('Cambiar cara',{exact:true}).click();await page.locator('[data-avatar="face-07"]').click();
+ page.once('dialog',d=>d.dismiss());await page.evaluate(()=>navigateNotification({kind:'request',id:1}));assert.equal(await page.evaluate(()=>page),'settings');assert.equal(await page.evaluate(()=>dirty),true);
+ page.once('dialog',d=>d.accept());await page.evaluate(()=>navigateNotification({kind:'request',id:1}));await page.locator('[data-request-id="1"].notification-target').waitFor();
+ await page.evaluate(()=>navigator.serviceWorker.dispatchEvent(new MessageEvent('message',{data:{type:'parental:navigate',target:{kind:'client',client:'iMac de Emma',service:'youtube'}}})));
+ await page.locator('#adguard-service-list [data-service-row="youtube"].notification-target').waitFor();assert.equal(await page.locator('#adguard-service-list [data-service-row]').count(),1);
+ await page.screenshot({path:shots+'/parental-aviso-destino-servicio.png'});await page.locator('#adguard-dialog-backdrop').getByRole('button',{name:'Cerrar',exact:true}).click();
+ await page.evaluate(()=>navigateNotification({kind:'request',id:999}));await page.waitForFunction(()=>document.getElementById('message').textContent.includes('no está disponible'));
+ await page.evaluate(()=>{window.badgeCalls=[];Object.defineProperty(navigator,'setAppBadge',{value:async n=>window.badgeCalls.push(['set',n]),configurable:true});Object.defineProperty(navigator,'clearAppBadge',{value:async()=>window.badgeCalls.push(['clear']),configurable:true});ParentalUI.setRequests([],null);ParentalUI.setRequests(state.requests,me)});
+ await page.waitForFunction(()=>window.badgeCalls.some(c=>c[0]==='set'&&c[1]===1));await page.evaluate(()=>ParentalUI.setRequests([],null));await page.waitForFunction(()=>window.badgeCalls.at(-1)[0]==='clear');
+ await page.evaluate(()=>ParentalUI.setRequests(state.requests,me));
+ await page.setViewportSize({width:1440,height:1000});
+ await page.evaluate(async()=>{
+  token='';for(const n of document.body.children)n.style.display='none';document.body.style.display='block';document.body.style.padding='32px';
+  const board=document.createElement('section');board.style.cssText='max-width:1380px;margin:auto';document.body.append(board);
+  const group=(label)=>{const h=document.createElement('h2');h.textContent=label;board.append(h);const grid=document.createElement('div');grid.style.cssText='display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:12px;margin:24px 0 40px';board.append(grid);return grid;};
+  const devices=group('Parental · 12 dispositivos originales');for(const [id,label]of deviceIconCatalog){const item=document.createElement('div');item.append(clientDeviceIcon({ui_icon:id,name:label}));const name=document.createElement('small');name.textContent=label;item.append(name);devices.append(item);}
+  const faces=group('12 caras editables');for(const face of ParentalIdentity.faces)faces.append(ParentalIdentity.avatar({avatar:face.id}));
+  const brands=group('142 logos locales · Catálogo oficial de AdGuard');for(const id of Object.keys(ParentalServices)){const item=document.createElement('div');item.style.cssText='display:flex;align-items:center;flex-direction:column;gap:8px;padding:12px 4px;border:1px solid #eee;border-radius:12px';item.append(serviceIcon(id));const name=document.createElement('small');name.textContent=id;name.style.cssText='font-size:10px;overflow-wrap:anywhere;text-align:center';item.append(name);brands.append(item);}
+  await Promise.all([...board.querySelectorAll('img')].map(img=>img.complete?(img.naturalWidth?Promise.resolve():Promise.reject(Error(img.src))):new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=()=>reject(Error(img.src))})));
+ });
+ await page.screenshot({path:shots+'/parental-catalogo-completo.png',fullPage:true});
  assert.deepEqual(errors,[]);
  console.log(JSON.stringify({passed:true,screenshots:shots,clientSettings:'mobile widths, own/global services, validation, API errors, read-only confirmation and saved device icons',sanitizer,calls},null,2));
  }finally{await browser.close()}

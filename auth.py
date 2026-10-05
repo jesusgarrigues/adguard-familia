@@ -3,6 +3,7 @@ import hashlib, hmac, json, secrets, sqlite3, threading, time
 from pathlib import Path
 
 ROLES={'admin','responsable','solicitante','observador'}
+AVATARS=('', *(f'face-{n:02d}' for n in range(1,13)))
 LOCK=threading.RLock()
 DB=None
 
@@ -21,6 +22,8 @@ def init(folder):
     columns={row['name'] for row in DB.execute('PRAGMA table_info(requests)')}
     if 'extend_bedtime' not in columns: DB.execute('ALTER TABLE requests ADD COLUMN extend_bedtime INTEGER NOT NULL DEFAULT 0')
     if 'approved_extend_bedtime' not in columns: DB.execute('ALTER TABLE requests ADD COLUMN approved_extend_bedtime INTEGER')
+    if 'avatar' not in {row['name'] for row in DB.execute('PRAGMA table_info(users)')}:
+        DB.execute("ALTER TABLE users ADD COLUMN avatar TEXT NOT NULL DEFAULT ''")
     DB.commit()
 
 
@@ -69,6 +72,8 @@ def save_user(actor,body,bootstrap=False):
         duration=body.get('max_minutes',old['max_minutes'] if old else 120)
         edit=body.get('edit_policy',bool(old['edit_policy']) if old else False)
         active=body.get('active',bool(old['active']) if old else True)
+        avatar=body.get('avatar',old['avatar'] if old else '')
+        if not isinstance(avatar,str) or avatar not in AVATARS: raise ValueError('Selecciona una cara del catálogo')
         if not name or len(name)>80 or role not in ROLES: raise ValueError('Usuario o rol inválido')
         if not isinstance(clients,list) or any(not isinstance(x,str) or not x for x in clients): raise ValueError('Asignación de clientes inválida')
         if type(duration) is not int or not 1<=duration<=1440 or type(edit) is not bool or type(active) is not bool: raise ValueError('Permisos inválidos')
@@ -77,11 +82,27 @@ def save_user(actor,body,bootstrap=False):
         pwd=password_hash(body['password']) if body.get('password') else old['password'] if old else None
         if not pwd: raise ValueError('Contraseña obligatoria')
         try:
-            if old: DB.execute('UPDATE users SET username=?,password=?,role=?,clients=?,edit_policy=?,max_minutes=?,active=? WHERE id=?',(name,pwd,role,json.dumps(clients),int(edit),duration,int(active),uid))
-            else: uid=DB.execute('INSERT INTO users(username,password,role,clients,edit_policy,max_minutes,active) VALUES(?,?,?,?,?,?,?)',(name,pwd,role,json.dumps(clients),int(edit),duration,int(active))).lastrowid
+            if old: DB.execute('UPDATE users SET username=?,password=?,role=?,clients=?,edit_policy=?,max_minutes=?,active=?,avatar=? WHERE id=?',(name,pwd,role,json.dumps(clients),int(edit),duration,int(active),avatar,uid))
+            else: uid=DB.execute('INSERT INTO users(username,password,role,clients,edit_policy,max_minutes,active,avatar) VALUES(?,?,?,?,?,?,?,?)',(name,pwd,role,json.dumps(clients),int(edit),duration,int(active),avatar)).lastrowid
         except sqlite3.IntegrityError: raise ValueError('Ese nombre de usuario ya existe')
-        if old: DB.execute('DELETE FROM sessions WHERE user_id=?',(uid,))
+        if old and (name!=old['username'] or pwd!=old['password'] or role!=old['role'] or clients!=json.loads(old['clients']) or edit!=bool(old['edit_policy']) or duration!=old['max_minutes'] or active!=bool(old['active'])):
+            DB.execute('DELETE FROM sessions WHERE user_id=?',(uid,))
         DB.commit();audit(actor,'user_saved',{'id':uid,'role':role,'clients':clients,'active':active})
+        return public(DB.execute('SELECT * FROM users WHERE id=?',(uid,)).fetchone())
+
+
+def save_avatar(actor,body):
+    if not actor: raise Forbidden('Inicia sesión para continuar')
+    if set(body)-{'avatar','user_id'}: raise ValueError('Solo puedes cambiar la cara desde este formulario')
+    uid=body.get('user_id',actor['id'])
+    if type(uid) is not int: raise ValueError('Usuario inválido')
+    if uid!=actor['id']: require(actor,'admin')
+    avatar=body.get('avatar')
+    if not isinstance(avatar,str) or avatar not in AVATARS: raise ValueError('Selecciona una cara del catálogo')
+    with LOCK:
+        if not DB.execute('SELECT 1 FROM users WHERE id=?',(uid,)).fetchone(): raise ValueError('Usuario desconocido')
+        DB.execute('UPDATE users SET avatar=? WHERE id=?',(avatar,uid));DB.commit()
+        audit(actor,'avatar_saved',{'user_id':uid,'avatar':avatar})
         return public(DB.execute('SELECT * FROM users WHERE id=?',(uid,)).fetchone())
 
 
@@ -150,7 +171,7 @@ def request_access(user,body,validate):
 def requests_for(user):
     with LOCK:
         DB.execute("UPDATE requests SET status='expired' WHERE status='pending' AND created<?",(time.time()-86400,));DB.commit()
-        rows=[dict(r) for r in DB.execute('SELECT r.*,u.username FROM requests r JOIN users u ON r.user_id=u.id ORDER BY r.id DESC LIMIT 1000')]
+        rows=[dict(r) for r in DB.execute('SELECT r.*,u.username,u.avatar FROM requests r JOIN users u ON r.user_id=u.id ORDER BY r.id DESC LIMIT 1000')]
         for row in rows:
             row['extend_bedtime']=bool(row['extend_bedtime'])
             row['approved_extend_bedtime']=None if row['approved_extend_bedtime'] is None else bool(row['approved_extend_bedtime'])
