@@ -1,4 +1,6 @@
-# AdGuard Familia
+# Parental
+
+Antes AdGuard Familia. El repositorio y la imagen `jesusgarrigues/adguard-familia` conservan su nombre para que las instalaciones existentes sigan actualizándose con el mismo Compose y volumen.
 
 Panel familiar autohospedable para AdGuard Home y Nintendo Switch. Lee los clientes y sus ajustes dinámicamente, gestiona la configuración global y las personalizaciones y permite solicitar y aprobar excepciones temporales.
 
@@ -19,7 +21,7 @@ Abre http://localhost:8080, crea el primer administrador usando APP_TOKEN y conf
 
 Para cambiar el puerto publicado, define `APP_PORT=8090` (o el puerto que prefieras) en `.env` y ejecuta `docker compose up -d`. El contenedor y su comprobación de salud siguen usando 8080 internamente. `BIND_ADDRESS` conserva su función. Si tu Compose anterior tenía un puerto personalizado escrito directamente, pasa ese valor a `APP_PORT` antes de reemplazar el archivo para conservarlo.
 
-La interfaz usa un tema claro y la fuente Inter local. En el detalle del cliente, **Cambiar icono** ofrece 12 iconos de dispositivos y **Automático**. Administradores y responsables pueden cambiar los iconos de sus clientes; la elección se guarda en SQLite y se comparte entre navegadores. Se identifica un cliente de AdGuard por su conjunto de identificadores: renombrarlo o reordenarlos conserva el icono; cambiar ese conjunto crea una identidad distinta. Las consolas se identifican por su ID de Nintendo.
+La interfaz de Parental usa fondo blanco, títulos y botones negros y la fuente Inter local. En el móvil, la navegación inferior da acceso a Clientes, Solicitudes, Actividad y Ajustes. La burbuja de Solicitudes cuenta solo las pendientes visibles para tu cuenta y sigue actualizándose sin borrar formularios. En el detalle del cliente, **Cambiar icono** ofrece 12 iconos de dispositivos y **Automático**. Administradores y responsables pueden cambiar los iconos de sus clientes; la elección se guarda en SQLite y se comparte entre navegadores. Se identifica un cliente de AdGuard por su conjunto de identificadores: renombrarlo o reordenarlos conserva el icono; cambiar ese conjunto crea una identidad distinta. Las consolas se identifican por su ID de Nintendo.
 
 En **Ajustes**, activar **Usar servicios y horarios globales** oculta la edición personalizada. Al desactivarlo se recuperan los servicios propios del cliente; si no tiene ninguno, se presenta una selección vacía. Alternar la opción conserva el borrador. Guardar muestra progreso y errores dentro de la ventana, conserva los campos si falla y comprueba el resultado en AdGuard. Si AdGuard acepta el cambio pero no se puede comprobar la lectura, **Comprobar guardado** vuelve a consultar sin reenviar la escritura. Los permisos temporales siguen aplicándose sobre la configuración permanente.
 
@@ -116,7 +118,9 @@ Es una app web instalable (PWA), no un paquete APK ni una app de App Store. Publ
 - **Android:** abre el panel HTTPS en Chrome, menú → Instalar aplicación o Añadir a pantalla de inicio.
 - **iPhone:** abre el panel HTTPS en Safari, Compartir → Añadir a pantalla de inicio.
 
-El diseño se adapta al móvil, incluye iconos, manifest y modo independiente. No se almacena contenido privado en caché y se muestra una página de desconexión si el servidor no responde. La gestión y las aprobaciones necesitan conexión. Los avisos de nuevas solicitudes y bloqueos requieren permiso del navegador y mantener el panel abierto. No incluye push en segundo plano; el soporte de notificaciones varía en iOS.
+En **Ajustes → Instalar Parental** encontrarás el botón de instalación cuando el navegador lo permita o las instrucciones correspondientes. Safari en iPhone no muestra el mismo aviso automático de instalación que Chrome: se ofrece una guía de **Compartir → Añadir a pantalla de inicio**. La recomendación se puede ocultar y no se muestra si la app ya está instalada.
+
+El diseño se adapta al móvil e incluye el nuevo icono de Parental, icono de inicio de iOS de 180 px, variantes de 192/512 px, favicon, manifest y modo independiente. Se conserva el identificador de la PWA. La caché versionada guarda únicamente recursos estáticos públicos (fuentes, estilos, scripts e iconos). No se almacena contenido privado en caché y se muestra una página de desconexión si el servidor no responde. La gestión y las aprobaciones necesitan conexión. Los avisos de nuevas solicitudes y bloqueos requieren permiso del navegador y mantener el panel abierto. No incluye push en segundo plano; el soporte de notificaciones varía en iOS.
 
 Para actualizar la imagen sin borrar cuentas ni configuración:
 
@@ -125,7 +129,7 @@ docker compose pull
 docker compose up -d
 ```
 
-Después recarga el navegador. No borres los volúmenes. Los archivos de cuentas, sesiones y auditoría se guardan en `/data/accounts.db`.
+Después recarga el navegador. Si iOS conserva el nombre o icono anterior del acceso directo, retira solo ese acceso de la pantalla de inicio y vuelve a añadirlo desde Safari. Esto no borra las cuentas del servidor. No borres los volúmenes. Los archivos de cuentas, sesiones y auditoría se guardan en `/data/accounts.db`.
 
 ## Nintendo: conexión directa y tiempo extra
 

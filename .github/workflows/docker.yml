@@ -31,7 +31,10 @@ jobs:
           PY
           node --check /tmp/frontend.js
           node --check assets/client-settings.js
+          node --check assets/app-shell.js
+          node --check sw.js
           node test_ui.cjs
+          node test_pwa.cjs
       - name: Verify desktop and mobile controls in a browser
         run: |
           npm install --prefix /tmp/adguard-browser-deps --no-save playwright@1.62.1

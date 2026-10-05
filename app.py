@@ -35,7 +35,10 @@ RESTRICTIONS = {'@filtering':'filtering_enabled','@parental':'parental_enabled',
 POLICY_KEYS = ('use_global_settings','filtering_enabled','parental_enabled','safebrowsing_enabled','safe_search','safesearch_enabled','use_global_blocked_services','blocked_services','blocked_services_schedule')
 DEVICE_ICONS = ('monitor','laptop','smartphone','tablet','gamepad-2','tv','router','printer','speaker','headphones','watch','server')
 STATIC_ASSETS = {
+    '/assets/parental.css': ('assets/parental.css','text/css'),
     '/assets/app.css': ('assets/app.css','text/css'),
+    '/assets/app-shell.js': ('assets/app-shell.js','application/javascript'),
+    '/assets/parental-icon.png': ('assets/parental-icon.png','image/png'),
     '/assets/client-settings.js': ('assets/client-settings.js','application/javascript'),
     '/assets/fonts/InterVariable.woff2': ('assets/fonts/InterVariable.woff2','font/woff2'),
     **{'/assets/icons/'+icon+'.svg': ('assets/icons/'+icon+'.svg','image/svg+xml') for icon in DEVICE_ICONS},
@@ -538,7 +541,7 @@ class Handler(BaseHTTPRequestHandler):
     def respond(self,status,data,mime='application/json'):
         content=json.dumps(data,ensure_ascii=False).encode() if mime=='application/json' else data
         try:
-            self.send_response(status);self.send_header('Content-Type',mime+'; charset=utf-8');self.send_header('Cache-Control','no-store');self.send_header('X-Content-Type-Options','nosniff');self.send_header('Referrer-Policy','no-referrer');self.end_headers();self.wfile.write(content)
+            self.send_response(status);self.send_header('Content-Type',mime+('; charset=utf-8' if mime.startswith('text/') or mime in ('application/json','application/manifest+json','application/javascript','image/svg+xml') else ''));self.send_header('Cache-Control','no-store');self.send_header('X-Content-Type-Options','nosniff');self.send_header('Referrer-Policy','no-referrer');self.end_headers();self.wfile.write(content)
         except (BrokenPipeError,ConnectionResetError):
             logging.info('El navegador o proxy cerró la solicitud antes de recibir la respuesta')
     def cookie_token(self):
@@ -560,7 +563,7 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(result,dict): raise ValueError('Solicitud inválida')
         return result
     def do_GET(self):
-        assets={'/':('index.html','text/html'),'/manifest.webmanifest':('manifest.webmanifest','application/manifest+json'),'/sw.js':('sw.js','application/javascript'),'/icon.svg':('icon.svg','image/svg+xml'),'/icon-192.png':('icon-192.png','image/png'),'/icon-512.png':('icon-512.png','image/png')}
+        assets={'/':('index.html','text/html'),'/manifest.webmanifest':('manifest.webmanifest','application/manifest+json'),'/sw.js':('sw.js','application/javascript'),'/apple-touch-icon.png':('apple-touch-icon.png','image/png'),'/favicon.png':('favicon.png','image/png'),'/icon.svg':('icon.svg','image/svg+xml'),'/icon-192.png':('icon-192.png','image/png'),'/icon-512.png':('icon-512.png','image/png')}
         assets.update(STATIC_ASSETS)
         asset_path=urlsplit(self.path).path
         if asset_path in assets:

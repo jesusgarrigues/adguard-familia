@@ -15,12 +15,13 @@ const effective={filtering_enabled:true,parental_enabled:true,safebrowsing_enabl
 const state={clients,base_clients:Object.fromEntries(clients.map(c=>[c.name,c])),effective:Object.fromEntries(clients.map(c=>[c.name,effective])),base_effective:Object.fromEntries(clients.map(c=>[c.name,effective])),services,global_config:globalConfig,leases:[{client:'iMac de Emma',service:'youtube',expires:Date.now()/1000+1200},{client:'iMac de Emma',service:'service_44',expires:Date.now()/1000+1800}],events:[],requests:[],supported_tags:['device_pc','device_phone','user_child'],auto_clients:[],server:{},demo:true,error:''};
 const native={configured:true,devices:[{id:'ABC',key:'nintendo:ABC',name:'Switch de Martín',model:'Switch',used_minutes:0,remaining_minutes:5,limit_minutes:0,extra_minutes:5,bedtime:'20:00',forced_termination:true,alarms_enabled:false,last_sync:Date.now()/1000,console_sync_pending:false,available:true,can_grant:true,can_cancel:true,pending_operation:null,daily_extra_minutes:5,budget_remaining_minutes:5,bedtime_remaining_minutes:600,base_bedtime:'20:00',bedtime_start:'06:00',native_policy:{timerMode:'DAILY',restrictionMode:'FORCED_TERMINATION',dailyRegulations:{timeToPlayInOneDay:{enabled:true,limitTime:0},bedtime:{enabled:true,endingTime:{hour:20,minute:0},startingTime:{hour:6,minute:0}}},eachDayOfTheWeekRegulations:{}},policy_revision:'fixture-revision'}]};
 const requests=[{id:1,user_id:2,username:'martin',client:'nintendo:ABC',service:'@nintendo',minutes:20,reason:'Jugar con mis amigos',status:'pending',created:Date.now()/1000,extend_bedtime:true,approved_extend_bedtime:null}];
+state.requests=requests;
 const user={id:1,username:'admin',role:'admin',clients:[],edit_policy:true,max_minutes:1440};
 const calls=[];let adguardDown=false,clientFailure=null,readFailures=0,saveDelay=0;
 (async()=>{
  const browser=await chromium.launch({executablePath:process.env.CHROMIUM_EXECUTABLE||['/usr/bin/chromium','/usr/bin/google-chrome','/opt/google/chrome/chrome'].find(fs.existsSync),headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--disable-breakpad','--disable-crash-reporter']});
  try{
- const context=await browser.newContext({viewport:{width:1440,height:1080}});
+ const context=await browser.newContext({viewport:{width:1440,height:1080},serviceWorkers:'block'});
  await context.route('**/*',async route=>{
   const req=route.request(),url=new URL(req.url());
   if(url.pathname.startsWith('/api/')){
@@ -46,13 +47,18 @@ const calls=[];let adguardDown=false,clientFailure=null,readFailures=0,saveDelay
    return route.fulfill({contentType:'application/json',body:JSON.stringify(data)});
   }
   if(url.pathname==='/')return route.fulfill({contentType:'text/html',body:fs.readFileSync(root+'/index.html','utf8')});
+  if(['/manifest.webmanifest','/sw.js','/icon-192.png','/icon-512.png','/apple-touch-icon.png','/favicon.png','/icon.svg'].includes(url.pathname)){const file=root+url.pathname;return route.fulfill({contentType:file.endsWith('.png')?'image/png':file.endsWith('.webmanifest')?'application/manifest+json':file.endsWith('.js')?'application/javascript':'image/svg+xml',body:fs.readFileSync(file)});}
   if(url.pathname.startsWith('/assets/')){
    const file=root+url.pathname;if(fs.existsSync(file))return route.fulfill({contentType:file.endsWith('.css')?'text/css':file.endsWith('.js')?'application/javascript':file.endsWith('.woff2')?'font/woff2':'image/svg+xml',body:fs.readFileSync(file)});
   }
   return route.fulfill({status:404,body:'not found'});
  });
  const page=await context.newPage();page.setDefaultTimeout(10000);const errors=[];page.on('pageerror',e=>errors.push(e.message));
- await page.goto('http://preview.local/');await page.locator('[data-client-card]').first().waitFor();
+ await page.goto('https://preview.local/');await page.locator('[data-client-card]').first().waitFor();
+ assert.equal(await page.title(),'Parental');
+ assert.equal(await page.locator('.desktop-nav [data-request-count]').innerText(),'1');
+ await page.waitForFunction(()=>document.querySelector('.brand img').complete);
+ assert.ok(await page.locator('.brand img').evaluate(img=>img.complete&&img.naturalWidth===192));
  await page.evaluate(()=>document.fonts.ready);
  assert.ok(await page.evaluate(()=>document.fonts.check('16px Inter')));
  assert.equal(await page.evaluate(()=>getComputedStyle(document.documentElement).colorScheme),'light');
@@ -219,7 +225,38 @@ const calls=[];let adguardDown=false,clientFailure=null,readFailures=0,saveDelay
  await page.locator('#nintendo-dialog-backdrop').getByRole('button',{name:'Cerrar',exact:true}).click();
  await page.evaluate(()=>{me={...me,role:'responsable',edit_policy:false,max_minutes:30};go('requests')});
  await page.locator('#review-bedtime-1').waitFor();assert.equal(await page.locator('#review-bedtime-1').isChecked(),false);
+ await page.evaluate(()=>{me={...me,max_minutes:35};go('requests')});await page.locator('#review-1').waitFor();assert.equal(await page.locator('#review-1').inputValue(),'20');
+ await page.locator('#review-bedtime-1').check();const beforeDraft=await page.locator('#review-1').inputValue();
+ await page.evaluate(()=>refreshPendingCount());
+ assert.equal(await page.locator('#review-bedtime-1').isChecked(),true);assert.equal(await page.locator('#review-1').inputValue(),beforeDraft);
+ assert.equal(await page.locator('.mobile-nav [data-request-count]').innerText(),'1');
+ await page.evaluate(()=>{dirty=false;go('requests')});await page.locator('#review-bedtime-1').waitFor();
+ await page.screenshot({path:shots+'/parental-movil-solicitudes.png'});
+ for(const width of [320,375,390,430]){
+  await page.setViewportSize({width,height:844});assert.ok(await page.locator('.mobile-nav').isVisible());assert.equal(await page.locator('.mobile-nav .nav').count(),4);
+  const bounds=await page.locator('.mobile-nav .nav').evaluateAll(nodes=>nodes.every(n=>{const r=n.getBoundingClientRect();return r.width>=44&&r.height>=44&&r.left>=0&&r.right<=innerWidth}));assert.ok(bounds,'Mobile navigation does not fit at '+width);
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Page overflow at '+width);
+ }
+ await page.setViewportSize({width:390,height:844});await page.locator('.mobile-nav [data-page="settings"]').click();
+ assert.ok(await page.getByRole('heading',{name:'Ajustes',exact:true}).isVisible());assert.equal(await page.getByRole('button',{name:'Servidores e integraciones ›',exact:true}).count(),0);
+ await page.waitForFunction(()=>document.querySelector('#install-settings .install-icon').complete);
+ assert.ok(await page.locator('#install-settings .install-icon').evaluate(img=>img.complete&&img.naturalWidth===180));
+ await page.screenshot({path:shots+'/parental-movil-ajustes.png'});
+ await page.getByRole('button',{name:'Instalar Parental',exact:true}).click();await page.locator('#install-dialog').waitFor();
+ await page.getByRole('button',{name:'Entendido',exact:true}).click();assert.equal(await page.locator('#install-dialog').count(),0);
+ await page.evaluate(()=>{Object.defineProperty(navigator,'userAgent',{value:'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1',configurable:true});go('settings')});
+ await page.getByRole('button',{name:'Cómo instalar en iPhone',exact:true}).click();assert.ok((await page.locator('#install-dialog').innerText()).includes('Añadir a pantalla de inicio'));
+ await page.screenshot({path:shots+'/parental-instalar-iphone.png'});await page.getByRole('button',{name:'Entendido',exact:true}).click();
+ await page.evaluate(()=>{window.promptCalled=false;const e=new Event('beforeinstallprompt');e.prompt=async()=>{window.promptCalled=true};e.userChoice=Promise.resolve({outcome:'accepted'});dispatchEvent(e)});
+ assert.ok(await page.locator('#install-banner').isVisible());await page.locator('#install-banner [data-install]').click();assert.ok(await page.evaluate(()=>window.promptCalled));
+ await page.evaluate(()=>{Object.defineProperty(navigator,'standalone',{value:true,configurable:true});dispatchEvent(new Event('appinstalled'));go('settings')});
+ assert.equal(await page.locator('#install-banner').isVisible(),false);assert.ok((await page.locator('#install-settings').innerText()).includes('ya está abierta'));
+ await page.evaluate(()=>{Object.defineProperty(navigator,'standalone',{value:false,configurable:true});me={...me,role:'admin'};go('settings')});
+ assert.ok(await page.getByRole('button',{name:'Servidores e integraciones ›',exact:true}).isVisible());await page.getByRole('button',{name:'Servidores e integraciones ›',exact:true}).click();await page.locator('#s-url').waitFor();
+ await page.evaluate(()=>{me={...me,role:'solicitante',id:2};go('requests')});await page.locator('[data-request-id="1"]').waitFor();assert.equal(await page.locator('.request-decisions').count(),0);assert.ok(await page.getByRole('button',{name:'Retirar solicitud',exact:true}).isVisible());
+ await page.evaluate(()=>{me={...me,role:'responsable'};go('clients')});
  adguardDown=true;await page.evaluate(()=>{state=null;dirty=false;go('clients');return refresh(true)});assert.ok(await page.locator('[data-console="nintendo:ABC"]').isVisible());
+ await page.screenshot({path:shots+'/parental-movil-clientes.png'});
  assert.deepEqual(errors,[]);
  console.log(JSON.stringify({passed:true,screenshots:shots,clientSettings:'mobile widths, own/global services, validation, API errors, read-only confirmation and saved device icons',sanitizer,calls},null,2));
  }finally{await browser.close()}
