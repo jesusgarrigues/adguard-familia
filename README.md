@@ -161,7 +161,7 @@ En **Ajustes → Parental → Mi perfil → Cambiar cara**, elige una cara y pul
 
 **Ajustes → Integraciones** separa AdGuard Home (conexión, diagnóstico y configuración global de AdGuard) de Nintendo (cuenta y sincronización). Los ajustes de cada cliente o consola siguen en su popup.
 
-Activar avisos muestra el estado del permiso y los errores en el mismo bloque. Usa Probar aviso para comprobar la entrega. En iPhone/iPad: HTTPS, iOS/iPadOS 16.4 o posterior y Parental instalada en la pantalla de inicio. Esta entrega requiere que el panel esté abierto; los destinos externos y las acciones interactivas #48/#50 siguen pendientes. [Detalles, fuentes y licencias de iconos](docs/parental-perfiles-avisos-iconos.md).
+Activar avisos muestra el estado del permiso, registra Push y presenta los errores en el mismo bloque. Probar aviso comprueba la entrega local; Probar desde el servidor comprueba el envío desde Docker, también con Parental cerrada. En iPhone/iPad: HTTPS, iOS/iPadOS 16.4 o posterior y Parental instalada en la pantalla de inicio. Los otros destinos externos y sus acciones interactivas #48/#50 siguen pendientes. [Detalles, fuentes y licencias de iconos](docs/parental-perfiles-avisos-iconos.md).
 
 La burbuja del icono instalado utiliza Badging API cuando esté disponible y cuenta las solicitudes pendientes visibles para tu cuenta; se elimina al cerrar sesión. En Android depende del navegador y launcher y puede estar ligada a los avisos activos. No se promete actualización con el panel cerrado. Al pulsar un aviso, se abre y enfoca la solicitud de aprobación concreta o el cliente y servicio bloqueados; las aprobaciones siguen siendo explícitas y autenticadas.
 
@@ -185,6 +185,6 @@ El acceso OIDC con Authentik se configura en **Ajustes → Parental → Acceso e
 
 ### Avisos selectivos de bloqueos
 
-Configura servicios, protecciones opcionales e intervalos por responsable en Ajustes → Parental → Intentos bloqueados, con personalización por cliente. Al pulsar el aviso se abre la autorización del cliente/servicio concreto. [Guía y diagnóstico](docs/avisos-bloqueos.md). Avisos de navegador con panel abierto; entrega externa con app cerrada sigue pendiente.
+Configura servicios, protecciones opcionales e intervalos por responsable en Ajustes → Parental → Intentos bloqueados, con personalización por cliente. Al pulsar el aviso se abre la autorización del cliente/servicio concreto. [Guía y diagnóstico](docs/avisos-bloqueos.md). Web Push entrega desde Docker con Parental cerrada; sin suscripción Push solo se entrega con el panel abierto. Los otros proveedores externos siguen pendientes.
 
 Los avisos automáticos ahora usan una bandeja persistente y Web Push desde Docker. Tras actualizar, pulsa **Activar avisos** en cada dispositivo aunque ya tuviera permiso. **Probar desde el servidor** comprueba el canal con el panel cerrado; consulta [activación y diagnóstico](docs/avisos-bloqueos.md).

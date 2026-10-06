@@ -57,7 +57,7 @@
         try{const saved=await options.request('me/notifications',draft);if(!section.isConnected)return;options.clean();options.saved(saved);feedback.textContent='Avisos guardados. Se aplicarán a nuevos intentos; el historial no se reenvía.';}
         catch(error){feedback.textContent='No se pudo guardar: '+error.message;}
         finally{for(const [n,disabled]of controls)n.disabled=disabled;}
-      },'primary');save.id='alert-save';form.append(save);section.insertBefore(form,feedback);feedback.textContent='Los otros bloqueos son opcionales. Las solicitudes de tiempo mantienen sus avisos. Se entregan mientras el panel está abierto.';
+      },'primary');save.id='alert-save';form.append(save);section.insertBefore(form,feedback);feedback.textContent='Los otros bloqueos son opcionales. Las solicitudes de tiempo mantienen sus avisos. Activa Avisos del navegador en cada dispositivo para recibirlos con Parental cerrada.';
     }catch(error){feedback.textContent='No se pudieron cargar los avisos: '+error.message;section.append(action('Reintentar',()=>{section.remove();settings(root,options);}));}
   }
   function close(force=false){const node=document.getElementById('blocked-authorization');if(!node)return true;if(force!==true&&node.dataset.pending==='true')return false;node.remove();close.previous?.focus();return true;}

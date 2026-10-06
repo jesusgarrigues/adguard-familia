@@ -386,11 +386,12 @@ const calls=[];let adguardDown=false,clientFailure=null,readFailures=0,saveDelay
  assert.equal(await page.evaluate(()=>window.__autoNotifications),2);await page.evaluate(()=>ParentalAlertCenter.poll());assert.equal(await page.evaluate(()=>window.__autoNotifications),2);
  await page.evaluate(()=>{dirty=false;go('requests');});
  assert.equal(await page.locator('[data-alert-count]').first().innerText(),'1');
- await page.evaluate(()=>go('activity'));await page.locator('[data-alert-inbox]').getByRole('button',{name:'Revisar permiso',exact:true}).click();
- await page.locator('#blocked-authorization').waitFor();await page.waitForFunction(()=>document.querySelector('[data-alert-count]').hidden);assert.equal(await page.locator('#blocked-authorization h2').innerText(),'Permitir YouTube');
- await page.locator('#blocked-authorization').getByRole('button',{name:'Cerrar',exact:true}).click();
+ await page.evaluate(()=>go('activity'));await page.locator('[data-alert-inbox]').getByRole('button',{name:'Revisar permiso',exact:true}).waitFor();
  for(const width of [320,375,390,430]){await page.setViewportSize({width,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Alerts overflow at '+width);}
  await page.screenshot({path:shots+'/movil-avisos-no-leidos.png',fullPage:true});
+ await page.locator('[data-alert-inbox]').getByRole('button',{name:'Revisar permiso',exact:true}).click();
+ await page.locator('#blocked-authorization').waitFor();await page.waitForFunction(()=>document.querySelector('[data-alert-count]').hidden);assert.equal(await page.locator('#blocked-authorization h2').innerText(),'Permitir YouTube');
+ await page.locator('#blocked-authorization').getByRole('button',{name:'Cerrar',exact:true}).click();
  await page.evaluate(()=>{window.ParentalNotifications.state=window.__notificationState;window.ParentalNotifications.notify=window.__notificationNotify;go('settings');});await page.locator('[data-auto-notification-status]').waitFor();await page.screenshot({path:shots+'/movil-diagnostico-entrega.png',fullPage:true});
  await page.setViewportSize({width:1440,height:1000});
  await page.evaluate(async()=>{

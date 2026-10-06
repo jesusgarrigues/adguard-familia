@@ -133,7 +133,7 @@
       for (const [view, label] of [['users', 'Usuarios y roles'], ['audit', 'Registro de cambios']]) action(manage, label + ' ›', () => callbacks.navigate(view), 'settings-link');
     }
     const notifications = group('Avisos del navegador');
-    notifications.append(make('p', 'Recibe avisos de solicitudes y consultas bloqueadas mientras el panel esté abierto.'));
+    notifications.append(make('p', 'Recibe avisos de solicitudes y consultas bloqueadas. Activa el envío desde el servidor en cada dispositivo para recibirlos con Parental cerrada.'));
     window.ParentalNotifications.panel(notifications);
     const badgeHint=make('p','','notification-scope');badgeHint.dataset.appBadgeStatus='';notifications.append(badgeHint);window.ParentalBadges?.render();
     callbacks.blockedAlerts?.(root,account);

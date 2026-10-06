@@ -12,7 +12,7 @@ Mi perfil permite seleccionar una de doce caras originales o conservar la inicia
 
 Se muestra el estado del permiso y cualquier error junto a Activar avisos. Probar aviso verifica la entrega al sistema, utilizando el service worker cuando está activo. En iPhone/iPad se requiere HTTPS, iOS/iPadOS 16.4 o posterior y abrir Parental desde su instalación en la pantalla de inicio. Un permiso bloqueado debe habilitarse desde los ajustes del sistema/navegador; la app no puede concedérselo a sí misma.
 
-Estos avisos se generan **mientras el panel está abierto**. Esta actualización no añade suscripción Web Push, entrega con la app cerrada ni los proveedores externos pendientes en #48/#50. Pulsar un aviso abre la vista correspondiente; no concede permisos ni ejecuta una aprobación. Si hay cambios sin guardar, se conserva la confirmación de navegación.
+Al activar avisos se registra una suscripción Web Push en Docker para recibirlos **también con Parental cerrada**. Sin suscripción Push, la entrega local requiere el panel abierto. Los otros proveedores externos y sus acciones siguen pendientes en #48/#50. Pulsar un aviso abre la vista correspondiente; no concede permisos ni ejecuta una aprobación. Si hay cambios sin guardar, se conserva la confirmación de navegación. [Activación y diagnóstico](avisos-bloqueos.md).
 
 ## Recursos gráficos
 
@@ -30,6 +30,6 @@ Pruebas de migración, persistencia, sesiones, permisos de perfil/CSRF, identida
 
 ## Burbuja del icono y destino del aviso
 
-El contador usa Badging API si el sistema la ofrece, con solicitudes pendientes filtradas por cuenta/rol/cliente. Cero y cierre de sesión borran la burbuja. Se actualiza mientras el panel consulta datos; no se añade Push en segundo plano. En iPhone la visibilidad depende de la instalación y permisos. Android puede usar burbujas de notificaciones activas del launcher; no existe garantía de contador numérico para todos los navegadores o fabricantes.
+El contador usa Badging API si el sistema la ofrece, sumando solicitudes pendientes y avisos de bloqueos sin leer filtrados por cuenta/rol/cliente. Cero y cierre de sesión borran la burbuja. Se actualiza al consultar datos y al recibir Web Push. Leer en otro dispositivo se refleja al abrir Parental o recibir el siguiente Push; no se envían mensajes silenciosos solo para actualizar el contador. En iPhone la visibilidad depende de la instalación y permisos. Android puede usar burbujas de notificaciones activas del launcher; no existe garantía de contador numérico para todos los navegadores o fabricantes.
 
 Los avisos de aprobación abren la tarjeta concreta en Solicitudes, resaltada y enfocada. Los de consultas bloqueadas abren cliente y servicio. Se conserva el destino al iniciar sesión y se respetan los formularios sin guardar. Los datos del destino viajan en un fragmento URL interno, sin enviarse al proxy. IDs y campos se validan tanto en la página como en el service worker; pulsar nunca ejecuta una aprobación.
