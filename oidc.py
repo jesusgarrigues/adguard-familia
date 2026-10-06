@@ -94,6 +94,7 @@ class Connector:
     def public_config(self):
         cfg = self.config()
         return {key: cfg.get(key, '') for key in ('enabled', 'issuer', 'discovery_url', 'client_id', 'public_url')} | {
+            'trust_email': bool(cfg.get('trust_email')),
             'secret_set': bool(cfg.get('client_secret')),
             'callback_url': cfg.get('public_url', '') + CALLBACK if cfg.get('public_url') else '',
         }
@@ -112,7 +113,10 @@ class Connector:
             enabled = body.get('enabled', False)
             if type(enabled) is not bool:
                 raise OIDCError('La opción de habilitar debe ser booleana')
-            cfg = {'enabled': enabled, 'revision': secrets.token_urlsafe(24)}
+            trust_email = body.get('trust_email', old.get('trust_email', False))
+            if type(trust_email) is not bool:
+                raise OIDCError('La opción de confiar en el correo debe ser booleana')
+            cfg = {'enabled': enabled, 'trust_email': trust_email, 'revision': secrets.token_urlsafe(24)}
             for key in ('issuer', 'discovery_url', 'client_id', 'public_url'):
                 value = body.get(key, old.get(key, ''))
                 if not isinstance(value, str) or len(value) > 2048:
@@ -138,7 +142,7 @@ class Connector:
             auth.DB.execute('DELETE FROM oidc_flows')
             auth.DB.execute("DELETE FROM sessions WHERE auth_provider='authentik'")
             auth.DB.commit()
-            auth.audit(actor, 'authentik_configured', {'enabled': enabled})
+            auth.audit(actor, 'authentik_configured', {'enabled': enabled, 'trust_email': trust_email})
             return self.public_config()
 
     def http_json(self, url, data=None):
@@ -223,7 +227,7 @@ class Connector:
             auth.DB.execute('INSERT INTO oidc_flows(state,binding,kind,user_id,session_hash,nonce,verifier,revision,expires,target) VALUES(?,?,?,?,?,?,?,?,?,?)', (digest(state), digest(binding), 'link' if actor else 'login', actor['id'] if actor else None, digest(session_token) if actor else None, nonce, verifier, cfg['revision'], now + 600, destination(target)))
             auth.DB.commit()
         challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip('=')
-        params = {'client_id': cfg['client_id'], 'redirect_uri': cfg['public_url'] + CALLBACK, 'response_type': 'code', 'scope': 'openid profile', 'state': state, 'nonce': nonce, 'code_challenge': challenge, 'code_challenge_method': 'S256'}
+        params = {'client_id': cfg['client_id'], 'redirect_uri': cfg['public_url'] + CALLBACK, 'response_type': 'code', 'scope': 'openid profile email', 'state': state, 'nonce': nonce, 'code_challenge': challenge, 'code_challenge_method': 'S256'}
         if actor:
             params['prompt'] = 'login'
         return metadata['authorization_endpoint'] + '?' + urllib.parse.urlencode(params), binding
@@ -254,7 +258,11 @@ class Connector:
             label = claims.get('preferred_username') or claims.get('name') or 'Usuario Authentik'
             if not isinstance(label, str):
                 label = 'Usuario Authentik'
-            return {'issuer': cfg['issuer'], 'subject': subject, 'label': label[:160]}
+            email = claims.get('email')
+            email = email.strip().lower() if isinstance(email, str) and len(email) <= 254 and '@' in email else ''
+            # Only a literal JSON true counts: Authentik 2025.10+ sends false unless a custom mapping says otherwise.
+            return {'issuer': cfg['issuer'], 'subject': subject, 'label': label[:160], 'email': email,
+                    'email_verified': claims.get('email_verified') is True}
         except jwt.PyJWTError:
             raise OIDCError('El ID token no supera la validación de firma, identidad o caducidad') from None
         except (TypeError, KeyError):
@@ -286,9 +294,29 @@ class Connector:
                 return {'target': '/?view=settings#authentik=confirm', 'link': True}
             row = auth.DB.execute('SELECT u.* FROM users u JOIN external_identities e ON e.user_id=u.id WHERE e.issuer=? AND e.subject=? AND u.active=1', (identity['issuer'], identity['subject'])).fetchone()
             if not row:
+                row = self._auto_link(identity, cfg)
+            if not row:
                 raise OIDCError('Esta identidad no está vinculada a una cuenta activa. Entra con tu contraseña local y vincúlala desde Mi perfil')
             token, csrf, user = auth.issue_session(row, 'authentik', identity['issuer'], identity['subject'])
             return {'target': flow['target'], 'token': token, 'csrf': csrf, 'user': user, 'link': False}
+
+    def _auto_link(self, identity, cfg):
+        """First Authentik login: link to the one active account with this e-mail, never by username (#97).
+
+        The e-mail must be verified by the token, or the administrator must have chosen to trust the
+        e-mail their own Authentik sends. Accounts already linked to another identity are left alone.
+        """
+        if not identity.get('email') or not (identity.get('email_verified') or cfg.get('trust_email')):
+            return None
+        if auth.DB.execute('SELECT 1 FROM external_identities WHERE issuer=? AND subject=?', (identity['issuer'], identity['subject'])).fetchone():
+            return None  # Linked to a deactivated account: never move it to another one.
+        rows = auth.DB.execute("SELECT * FROM users WHERE lower(email)=? AND email!='' AND active=1", (identity['email'],)).fetchall()
+        if len(rows) != 1 or auth.DB.execute('SELECT 1 FROM external_identities WHERE user_id=?', (rows[0]['id'],)).fetchone():
+            return None
+        auth.DB.execute('INSERT INTO external_identities VALUES(?,?,?,?,?)', (rows[0]['id'], identity['issuer'], identity['subject'], identity['label'], time.time()))
+        auth.DB.commit()
+        auth.audit(auth.public(rows[0]), 'authentik_auto_linked', {'user_id': rows[0]['id'], 'verified': identity['email_verified']})
+        return rows[0]
 
     def status(self, actor, session_token='', binding=''):
         cfg = self.config()

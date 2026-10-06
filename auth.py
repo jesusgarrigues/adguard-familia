@@ -1,5 +1,5 @@
 """Local accounts, scoped permissions, sessions and approval requests."""
-import hashlib, hmac, json, secrets, sqlite3, threading, time
+import re, hashlib, hmac, json, secrets, sqlite3, threading, time
 from pathlib import Path
 
 ROLES={'admin','responsable','solicitante','observador'}
@@ -23,8 +23,11 @@ def init(folder):
     columns={row['name'] for row in DB.execute('PRAGMA table_info(requests)')}
     if 'extend_bedtime' not in columns: DB.execute('ALTER TABLE requests ADD COLUMN extend_bedtime INTEGER NOT NULL DEFAULT 0')
     if 'approved_extend_bedtime' not in columns: DB.execute('ALTER TABLE requests ADD COLUMN approved_extend_bedtime INTEGER')
-    if 'avatar' not in {row['name'] for row in DB.execute('PRAGMA table_info(users)')}:
+    user_columns={row['name'] for row in DB.execute('PRAGMA table_info(users)')}
+    if 'avatar' not in user_columns:
         DB.execute("ALTER TABLE users ADD COLUMN avatar TEXT NOT NULL DEFAULT ''")
+    if 'email' not in user_columns:  # Optional; lets a first Authentik login find its account (#97).
+        DB.execute("ALTER TABLE users ADD COLUMN email TEXT NOT NULL DEFAULT ''")
     session_columns={row['name'] for row in DB.execute('PRAGMA table_info(sessions)')}
     for name in ('auth_provider','auth_issuer','auth_subject'):
         if name not in session_columns: DB.execute('ALTER TABLE sessions ADD COLUMN '+name+" TEXT NOT NULL DEFAULT ''")
@@ -79,6 +82,11 @@ def save_user(actor,body,bootstrap=False):
         edit=body.get('edit_policy',bool(old['edit_policy']) if old else False)
         active=body.get('active',bool(old['active']) if old else True)
         avatar=body.get('avatar',old['avatar'] if old else '')
+        email=body.get('email',old['email'] if old else '')
+        if not isinstance(email,str): raise ValueError('Correo inválido')
+        email=email.strip().lower()
+        if email and (len(email)>254 or not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+',email)): raise ValueError('Correo inválido')
+        if email and DB.execute('SELECT 1 FROM users WHERE lower(email)=? AND id IS NOT ?',(email,uid)).fetchone(): raise ValueError('Ese correo ya pertenece a otra cuenta')
         if not isinstance(avatar,str) or avatar not in AVATARS: raise ValueError('Selecciona una cara del catálogo')
         if not name or len(name)>80 or role not in ROLES: raise ValueError('Usuario o rol inválido')
         if not isinstance(clients,list) or any(not isinstance(x,str) or not x for x in clients): raise ValueError('Asignación de clientes inválida')
@@ -88,8 +96,8 @@ def save_user(actor,body,bootstrap=False):
         pwd=password_hash(body['password']) if body.get('password') else old['password'] if old else None
         if not pwd: raise ValueError('Contraseña obligatoria')
         try:
-            if old: DB.execute('UPDATE users SET username=?,password=?,role=?,clients=?,edit_policy=?,max_minutes=?,active=?,avatar=? WHERE id=?',(name,pwd,role,json.dumps(clients),int(edit),duration,int(active),avatar,uid))
-            else: uid=DB.execute('INSERT INTO users(username,password,role,clients,edit_policy,max_minutes,active,avatar) VALUES(?,?,?,?,?,?,?,?)',(name,pwd,role,json.dumps(clients),int(edit),duration,int(active),avatar)).lastrowid
+            if old: DB.execute('UPDATE users SET username=?,password=?,role=?,clients=?,edit_policy=?,max_minutes=?,active=?,avatar=?,email=? WHERE id=?',(name,pwd,role,json.dumps(clients),int(edit),duration,int(active),avatar,email,uid))
+            else: uid=DB.execute('INSERT INTO users(username,password,role,clients,edit_policy,max_minutes,active,avatar,email) VALUES(?,?,?,?,?,?,?,?,?)',(name,pwd,role,json.dumps(clients),int(edit),duration,int(active),avatar,email)).lastrowid
         except sqlite3.IntegrityError: raise ValueError('Ese nombre de usuario ya existe')
         if old and (name!=old['username'] or pwd!=old['password'] or role!=old['role'] or clients!=json.loads(old['clients']) or edit!=bool(old['edit_policy']) or duration!=old['max_minutes'] or active!=bool(old['active'])):
             DB.execute('DELETE FROM sessions WHERE user_id=?',(uid,))
