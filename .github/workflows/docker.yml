@@ -16,7 +16,7 @@ jobs:
         with:
           python-version: '3.13'
       - run: pip install -r requirements.txt
-      - run: python -m unittest -v test_app.py test_diagnostics.py test_auth.py test_nintendo.py test_nintendo_routes.py test_oidc.py test_catalog.py test_blocked_alerts.py test_notification_center.py
+      - run: python -m unittest -v test_app.py test_diagnostics.py test_auth.py test_nintendo.py test_nintendo_routes.py test_oidc.py test_catalog.py test_blocked_alerts.py test_notification_center.py test_security.py
       - run: python test_http.py
       - uses: actions/setup-node@v4
         with:

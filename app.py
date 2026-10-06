@@ -4,8 +4,8 @@ import base64, copy, hashlib, hmac, ipaddress, json, os, sqlite3, threading, tim
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
-from zoneinfo import ZoneInfo
-from http.cookies import SimpleCookie
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from http.cookies import CookieError, SimpleCookie
 import auth
 import re
 import nintendo
@@ -349,7 +349,7 @@ def validate_schedule(s):
     zone=s.get('time_zone','Local')
     if zone!='Local':
         try: ZoneInfo(zone)
-        except Exception: raise ValueError('Zona horaria inválida')
+        except (ZoneInfoNotFoundError, ValueError): raise ValueError('Zona horaria inválida') from None
     for day,r in s.items():
         if day=='time_zone': continue
         if not isinstance(r,dict) or set(r)-{'start','end'}: raise ValueError('Intervalo inválido')
@@ -547,7 +547,9 @@ def nintendo_state(user,force=False):
 def device_catalog():
     devices=[];errors=[]
     try: devices.extend({'key':c['name'],'name':c['name'],'provider':'adguard'} for c in api('clients')['clients'])
-    except Exception: errors.append('No se han podido leer los clientes de AdGuard')
+    except Exception:
+        security.log_failure('Catálogo de dispositivos: lectura de AdGuard',logging.WARNING)
+        errors.append('No se han podido leer los clientes de AdGuard')
     ns=NINTENDO.devices()
     devices.extend({'key':d['key'],'name':d['name'],'provider':'nintendo'} for d in ns.get('devices',[]))
     if ns.get('error'): errors.append(ns['error'])
@@ -603,21 +605,21 @@ def worker():
         with LOCK:
             try: reconcile();poll();LAST_ERROR=''
             except AdGuardError as e: LAST_ERROR=str(e)
-            except Exception: LAST_ERROR='Fallo al sincronizar AdGuard. Revisa el diagnóstico del servidor.';logging.error('Error interno de sincronización (sin datos de credenciales)')
+            except Exception: LAST_ERROR='Fallo al sincronizar AdGuard. Revisa el diagnóstico del servidor.';security.log_failure('Error interno de sincronización (sin datos de credenciales)')
         try: refresh_nintendo_requests()
-        except Exception: logging.warning('Nintendo: no se ha podido actualizar el estado de confirmación')
+        except Exception: security.log_failure('Nintendo: no se ha podido actualizar el estado de confirmación',logging.WARNING)
         try:
             with LOCK:
                 events=[dict(zip(('id','time','client','service','domain','kind'),row)) for row in DB.execute('SELECT * FROM events ORDER BY id DESC LIMIT 500')]
             ALERTS.sync(events)
-        except Exception: logging.warning('Avisos: fallo de recogida; consulta el diagnóstico de avisos')
+        except Exception: security.log_failure('Avisos: fallo de recogida; consulta el diagnóstico de avisos',logging.WARNING)
         time.sleep(10)
 
 
 def push_worker():
     while True:
         try: ALERTS.dispatch()
-        except Exception: logging.warning('Avisos: fallo de envío Push (sin credenciales ni destinos)')
+        except Exception: security.log_failure('Avisos: fallo de envío Push (sin credenciales ni destinos)',logging.WARNING)
         time.sleep(5)
 
 
@@ -637,12 +639,12 @@ class Handler(BaseHTTPRequestHandler):
     def cookie_token(self):
         cookie=SimpleCookie()
         try: cookie.load(self.headers.get('Cookie',''))
-        except Exception: return ''
+        except CookieError: return ''
         return cookie['session'].value if 'session' in cookie else ''
     def oidc_binding(self):
         cookie=SimpleCookie()
         try: cookie.load(self.headers.get('Cookie',''))
-        except Exception: return ''
+        except CookieError: return ''
         return cookie[oidc.COOKIE].value if oidc.COOKIE in cookie else ''
     def oidc_redirect(self,target,binding=None,token=None,clear=False):
         self.send_response(303)
@@ -697,6 +699,7 @@ class Handler(BaseHTTPRequestHandler):
                 content=('<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Parental · Authentik</title><link rel="stylesheet" href="/assets/parental.css"><main style="max-width:560px;margin:48px auto;padding:24px"><h1>No se pudo completar el acceso</h1><p>'+html.escape(str(error))+'</p><a href="/">Volver a Parental</a></main></html>').encode()
                 return self.respond(400,content,'text/html')
             except Exception:
+                security.log_failure('Authentik: fallo interno al completar el acceso')
                 return self.respond(502,{'error':'No se pudo completar Authentik. Vuelve a Parental e inicia de nuevo'})
         user=self.user()
         if not user: return self.respond(401,{'error':'Inicia sesión para continuar'})
@@ -731,7 +734,9 @@ class Handler(BaseHTTPRequestHandler):
         except oidc.OIDCError as e: self.respond(400,{'error':str(e)})
         except auth.Forbidden as e: self.respond(403,{'error':str(e)})
         except AdGuardError as e: self.respond(502,{'error':str(e),'diagnostic':e.detail})
-        except Exception: self.respond(502,{'error':'No se puede leer AdGuard. Revisa el diagnóstico en Servidor.'})
+        except Exception:
+            security.log_failure('GET '+urlsplit(self.path).path)
+            self.respond(502,{'error':'No se puede leer AdGuard. Revisa el diagnóstico en Servidor.'})
     def do_POST(self):
         try:
             body=self.body()
@@ -859,7 +864,9 @@ class Handler(BaseHTTPRequestHandler):
         except auth.Forbidden as e: self.respond(403,{'error':str(e)})
         except AdGuardError as e: self.respond(502,{'error':str(e),'diagnostic':e.detail})
         except (ValueError,KeyError,TypeError) as e: self.respond(400,{'error':str(e)})
-        except Exception: self.respond(502,{'error':'La operación no se pudo completar. Revisa solicitudes y permisos antes de reintentar.'})
+        except Exception:
+            security.log_failure('POST '+urlsplit(self.path).path)
+            self.respond(502,{'error':'La operación no se pudo completar. Revisa solicitudes y permisos antes de reintentar.'})
 
 
 if __name__=='__main__':
