@@ -12,9 +12,13 @@ import nintendo
 import oidc
 import blocked_alerts
 import notification_center
+import security
 from datetime import datetime
 
 ROOT = Path(__file__).parent
+
+
+CSP = security.content_security_policy((ROOT/'index.html').read_text())
 DATA = Path(os.getenv('DATA_DIR', '/data'))
 DATA.mkdir(parents=True, exist_ok=True)
 auth.init(DATA)
@@ -619,6 +623,11 @@ def push_worker():
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self,*args): pass
+    def end_headers(self):
+        # Every response, including redirects and errors, refuses framing and foreign scripts.
+        self.send_header('Content-Security-Policy',CSP)
+        self.send_header('X-Frame-Options','DENY')
+        super().end_headers()
     def respond(self,status,data,mime='application/json'):
         content=json.dumps(data,ensure_ascii=False).encode() if mime=='application/json' else data
         try:

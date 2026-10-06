@@ -20,6 +20,8 @@ const user={id:1,username:'admin',avatar:'face-01',role:'admin',clients:[],edit_
 let authenticEnabled=false,authenticLinked=false,authenticPending=null;const authenticConfig={enabled:false,issuer:'',discovery_url:'',client_id:'',public_url:'',secret_set:false,callback_url:''};
 const alertPreferences={mode:'all',services:[],protections:[],cooldown_minutes:5,clients:{}};let alertsFailure=false;
 let inboxItems=[],inboxUnread=0,deliveryAccepted=false,deliveryDue=true,deliveryAttempts=0,autoNotifyCalls=0;
+// Serve the page with the exact CSP app.py sends, so any violation fails the browser test.
+const csp=require('node:child_process').execFileSync('python3',['-c','import sys,security;print(security.content_security_policy(open(sys.argv[1]).read()),end="")',root+'/index.html'],{cwd:root,encoding:'utf8'});
 const calls=[];let adguardDown=false,clientFailure=null,readFailures=0,saveDelay=0;
 (async()=>{
  const browser=await chromium.launch({executablePath:process.env.CHROMIUM_EXECUTABLE||['/usr/bin/chromium','/usr/bin/google-chrome','/opt/google/chrome/chrome'].find(fs.existsSync),headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--disable-breakpad','--disable-crash-reporter']});
@@ -64,7 +66,7 @@ const calls=[];let adguardDown=false,clientFailure=null,readFailures=0,saveDelay
    const data=path==='me'?{user,csrf:'fixture-csrf'}:path==='state'?state:path==='nintendo/state'?native:path==='requests'?{requests}:path==='auth/status'?{configured:true}:path==='nintendo/config'?{configured:true,timezone:'Europe/Madrid'}:path==='server'?{url:'http://192.168.1.2:3000',username:'admin',demo:true}:path==='diagnostics'?{entries:[]}:path==='users'?{users:[user]}:path==='devices'?{devices:clients.map(c=>({key:c.name,name:c.name,provider:'adguard'}))}:body?{ok:true,status:['permit','cancel','nintendo/policy'].includes(path)?'confirmed':undefined}:{ok:true};
    return route.fulfill({contentType:'application/json',body:JSON.stringify(data)});
   }
-  if(url.pathname==='/')return route.fulfill({contentType:'text/html',body:fs.readFileSync(root+'/index.html','utf8')});
+  if(url.pathname==='/')return route.fulfill({contentType:'text/html',headers:{'Content-Security-Policy':csp},body:fs.readFileSync(root+'/index.html','utf8')});
   if(['/manifest.webmanifest','/sw.js','/icon-192.png','/icon-512.png','/apple-touch-icon.png','/favicon.png','/icon.svg'].includes(url.pathname)){const file=root+url.pathname;return route.fulfill({contentType:file.endsWith('.png')?'image/png':file.endsWith('.webmanifest')?'application/manifest+json':file.endsWith('.js')?'application/javascript':'image/svg+xml',body:fs.readFileSync(file)});}
   if(url.pathname.startsWith('/assets/services/')){const id=url.pathname.split('/').at(-1).replace('.svg','');const art=JSON.parse(fs.readFileSync(root+'/assets/service-artwork.json','utf8'))[id];if(art)return route.fulfill({contentType:'image/svg+xml',body:art});}
   if(url.pathname.startsWith('/assets/')){
@@ -72,7 +74,7 @@ const calls=[];let adguardDown=false,clientFailure=null,readFailures=0,saveDelay
   }
   return route.fulfill({status:404,body:'not found'});
  });
- const page=await context.newPage();page.setDefaultTimeout(10000);const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ const page=await context.newPage();page.setDefaultTimeout(10000);const errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(/Content Security Policy/i.test(m.text()))errors.push('CSP: '+m.text());});
  await page.goto('https://preview.local/');await page.locator('[data-client-card]').first().waitFor();
  assert.equal(await page.title(),'Parental');
  assert.equal(await page.locator('.desktop-nav [data-request-count]').innerText(),'1');

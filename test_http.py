@@ -155,6 +155,17 @@ try:
         with urllib.request.urlopen('http://127.0.0.1:8080/'+path+'?v=parental-1') as response:
             assert response.headers.get_content_type()=='image/png'
             icon=response.read();assert icon[:8]==b'\x89PNG\r\n\x1a\n' and struct.unpack('>II',icon[16:24])==(size,size)
+    # Security headers on the page, the API and errors; the CSP allows exactly the inline script served.
+    import base64, hashlib, re
+    with urllib.request.urlopen('http://127.0.0.1:8080/') as response:
+        page=response.read().decode();csp=response.headers['Content-Security-Policy']
+        assert response.headers['X-Frame-Options']=='DENY',response.headers
+    for directive in ("default-src 'self'","frame-ancestors 'none'","object-src 'none'","base-uri 'none'","connect-src 'self'"):assert directive in csp,csp
+    assert 'unsafe-inline' not in csp.split('script-src',1)[1].split(';',1)[0],csp
+    for code in re.findall(r'<script>(.*?)</script>',page,re.S):
+        assert "'sha256-"+base64.b64encode(hashlib.sha256(code.encode()).digest()).decode()+"'" in csp,csp
+    try:urllib.request.urlopen('http://127.0.0.1:8080/api/me')
+    except urllib.error.HTTPError as error:assert error.headers['Content-Security-Policy']==csp and error.headers['X-Frame-Options']=='DENY'
     with urllib.request.urlopen('http://127.0.0.1:8080/manifest.webmanifest') as response:
         manifest=json.loads(response.read());assert manifest['name']=='Parental' and manifest['id']=='/' and manifest['display']=='standalone'
     child.call('auth/logout',{});child.call('me',expected=401)
