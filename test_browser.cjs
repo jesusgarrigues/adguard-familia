@@ -376,7 +376,8 @@ const calls=[];let adguardDown=false,clientFailure=null,readFailures=0,saveDelay
  await page.locator('#icon-selector').waitFor({state:'detached'});assert.ok(await page.locator('[data-client-card="iMac de Emma"] img[src="/assets/icons/home-assistant.svg"]').isVisible());
  await page.locator('#adguard-dialog-backdrop').getByRole('button',{name:'Cerrar',exact:true}).click();
  // Automatic delivery is independent of Requests and dirty connection forms.
- await page.evaluate(()=>{go('server');document.querySelector('#s-url').value='http://unsaved.example:3000';dirty=true;window.ParentalNotifications.state=()=>({enabled:true});window.__autoNotifications=0;window.__acceptAutomatic=false;window.ParentalNotifications.notify=async()=>{window.__autoNotifications++;return window.__acceptAutomatic;};});
+ await page.evaluate(()=>go('server'));await page.locator('#s-url').waitFor();
+ await page.evaluate(()=>{document.querySelector('#s-url').value='http://unsaved.example:3000';dirty=true;window.__notificationState=window.ParentalNotifications.state;window.__notificationNotify=window.ParentalNotifications.notify;window.ParentalNotifications.state=()=>({enabled:true});window.__autoNotifications=0;window.__acceptAutomatic=false;window.ParentalNotifications.notify=async()=>{window.__autoNotifications++;return window.__acceptAutomatic;};});
  inboxItems=[{id:902,kind:'blocked',client:'iMac de Martín',service:'youtube',created:Date.now()/1000-660,read_at:null,detail:{domain:'accounts.youtube.com'},target:{kind:'client',client:'iMac de Martín',service:'youtube',alert_id:902}}];inboxUnread=1;deliveryDue=true;deliveryAccepted=false;
  await page.evaluate(()=>ParentalAlertCenter.poll());
  assert.equal(await page.evaluate(()=>window.__autoNotifications),1);assert.equal(deliveryAccepted,false);
@@ -390,7 +391,7 @@ const calls=[];let adguardDown=false,clientFailure=null,readFailures=0,saveDelay
  await page.locator('#blocked-authorization').getByRole('button',{name:'Cerrar',exact:true}).click();
  for(const width of [320,375,390,430]){await page.setViewportSize({width,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Alerts overflow at '+width);}
  await page.screenshot({path:shots+'/movil-avisos-no-leidos.png',fullPage:true});
- await page.evaluate(()=>go('settings'));await page.screenshot({path:shots+'/movil-diagnostico-entrega.png',fullPage:true});
+ await page.evaluate(()=>{window.ParentalNotifications.state=window.__notificationState;window.ParentalNotifications.notify=window.__notificationNotify;go('settings');});await page.locator('[data-auto-notification-status]').waitFor();await page.screenshot({path:shots+'/movil-diagnostico-entrega.png',fullPage:true});
  await page.setViewportSize({width:1440,height:1000});
  await page.evaluate(async()=>{
   token='';for(const n of document.body.children)n.style.display='none';document.body.style.display='block';document.body.style.padding='32px';
