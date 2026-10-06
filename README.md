@@ -21,46 +21,38 @@ Abre http://localhost:8080, crea el primer administrador usando APP_TOKEN y conf
 
 Para cambiar el puerto publicado, define `APP_PORT=8090` (o el puerto que prefieras) en `.env` y ejecuta `docker compose up -d`. El contenedor y su comprobación de salud siguen usando 8080 internamente. `BIND_ADDRESS` conserva su función. Si tu Compose anterior tenía un puerto personalizado escrito directamente, pasa ese valor a `APP_PORT` antes de reemplazar el archivo para conservarlo.
 
-La interfaz de Parental usa fondo blanco, títulos y botones negros y la fuente Inter local. En el móvil, la navegación inferior da acceso a Clientes, Solicitudes, Actividad y Ajustes. La burbuja de Solicitudes cuenta solo las pendientes visibles para tu cuenta y sigue actualizándose sin borrar formularios. En el detalle del cliente, **Cambiar icono** ofrece 12 iconos de dispositivos y **Automático**. Administradores y responsables pueden cambiar los iconos de sus clientes; la elección se guarda en SQLite y se comparte entre navegadores. Se identifica un cliente de AdGuard por su conjunto de identificadores: renombrarlo o reordenarlos conserva el icono; cambiar ese conjunto crea una identidad distinta. Las consolas se identifican por su ID de Nintendo.
-
-En **Ajustes**, activar **Usar servicios y horarios globales** oculta la edición personalizada. Al desactivarlo se recuperan los servicios propios del cliente; si no tiene ninguno, se presenta una selección vacía. Alternar la opción conserva el borrador. Guardar muestra progreso y errores dentro de la ventana, conserva los campos si falla y comprueba el resultado en AdGuard. Si AdGuard acepta el cambio pero no se puede comprobar la lectura, **Comprobar guardado** vuelve a consultar sin reenviar la escritura. Los permisos temporales siguen aplicándose sobre la configuración permanente.
-
 Para acceder desde tu LAN, configura `BIND_ADDRESS=0.0.0.0` y abre la IP del servidor. Usa un proxy inverso con HTTPS para acceso remoto y notificaciones de navegador desde la LAN. La URL de AdGuard incluye su puerto web, no su puerto DNS. `localhost` dentro del contenedor apunta a la app; para otro contenedor usa una red Docker compartida y el nombre de servicio.
 
 Las imágenes publicadas por el workflow admiten `linux/amd64` y `linux/arm64`. `latest` y `edge` se actualizan tras superar las pruebas en `main`; las etiquetas `v*` añaden versiones numeradas. Puedes fijar `IMAGE_TAG` a una versión publicada.
 
-## Clientes y herencia
+### Avisos en el móvil (Web Push)
 
-Los clientes persistentes, los dispositivos detectados, sus identificadores y el catálogo de servicios se leen de AdGuard. No hay clientes de ejemplo en modo real. Los dispositivos detectados pueden darse de alta desde el panel para recibir ajustes individuales.
+Para recibir avisos con Parental cerrada, publica el panel por HTTPS, instala la PWA y pulsa **Activar avisos** en cada dispositivo. Opcionalmente define en `.env` `WEB_PUSH_CONTACT=mailto:correo@dominio-real` o `https://dominio-real`: Apple rechaza los avisos si el contacto usa `localhost`, `.local`, `.lan` o una IP. Detalles en [Avisos](docs/avisos.md) y [activación y diagnóstico](docs/avisos-bloqueos.md).
 
-AdGuard tiene dos grupos independientes:
+## Actualizar
 
-- **Protección global:** filtrado, navegación segura, control parental y búsqueda segura.
-- **Servicios globales:** servicios bloqueados y sus pausas programadas.
+Haz una copia del volumen y ejecuta:
 
-Cada ficha muestra las restricciones configuradas y permite levantarlas temporalmente, por ejemplo YouTube durante 20 minutos para el iMac de Emma. Un permiso crea una personalización temporal únicamente en el grupo correspondiente; al vencer vuelve a la configuración permanente y a su herencia. Mientras dura, los ajustes heredados siguen los cambios globales actuales.
+```sh
+docker compose pull
+docker compose up -d
+```
 
-La vista principal usa tarjetas compactas con nombre, icono, servicios restringidos y permisos con tiempo restante. Al pulsar una tarjeta se abre su detalle: excepciones activas visibles al principio, **Favoritos** para lo habitual, **Todos los servicios** con buscador y categorías para listas largas y **Ajustes** con la configuración del cliente. Los favoritos se guardan por cuenta y cliente en ese navegador. Los 142 servicios conocidos usan logos locales con colores de marca. Un servicio nuevo usa el SVG saneado enviado por AdGuard o un icono de categoría. La lista de servicios siempre se obtiene de la instancia conectada. La misma distribución se adapta al móvil.
+No uses `docker compose down -v`: borraría cuentas, permisos y conexiones. Si vienes de la imagen anterior, sigue [Actualizar desde adguard-familia](docs/migracion-adguard-familia.md).
 
-**Configurar cliente** incluye nombre, identificadores IP/CIDR/MAC/ClientID, etiquetas, ambas herencias, filtrado, navegación segura, control parental, búsqueda segura por motor, servicios, pausas semanales, zona horaria, DNS propios, caché y exclusión de registros y estadísticas. Usa la API de clientes de AdGuard Home; los campos que no se editan se conservan.
+## Guías
 
-Puedes editar la configuración permanente mientras hay permisos activos. La app aplica las excepciones temporales sobre la nueva base. Los cambios externos observables se incorporan; AdGuard no ofrece transacciones entre lecturas y escrituras, por lo que conviene evitar cambios simultáneos al mismo cliente desde varias interfaces. No renombres un cliente con permisos activos. Para cambiar el servidor conectado, finaliza primero todos los permisos.
-
-**Configuración global** gestiona filtrado, navegación segura, control parental, búsqueda segura por motor, servicios y pausas de bloqueo. No sustituye las pantallas de administración DNS, DHCP, certificados, listas de filtros o usuarios de AdGuard. El interruptor maestro de protección se muestra como estado, se administra en AdGuard.
-
-Los horarios son **pausas** del bloqueo, según AdGuard, no horas de bloqueo. Las tarjetas muestran restricciones configuradas, no una afirmación de que estén bloqueando en este instante: el horario y el interruptor maestro pueden suspenderlas.
-
-## Avisos
-
-El registro de consultas alimenta la actividad bloqueada y ofrece permisos temporales desde el evento. Los avisos requieren HTTPS y permiso. Al activar la suscripción Push en cada dispositivo, Docker puede enviarlos con Parental cerrada. La entrega local sin Push necesita el panel abierto. Los proveedores externos de correo/Telegram siguen pendientes.
-
-Una consulta puede proceder de actividad en segundo plano. Se agrupan avisos por cliente y restricción cada 5 minutos, se leen las últimas 500 consultas cada 10 segundos y se guardan los últimos 500 eventos. Con mucho tráfico o desconexiones pueden perderse eventos. Un cliente excluido del registro no genera avisos. Para avisos de filtrado DNS se desactiva temporalmente el filtrado del cliente completo; no se crea una excepción solo para el dominio del aviso.
-
-DNS no garantiza detener un vídeo o conexión ya abiertos al caducar: las cachés y conexiones persistentes pueden retrasarlo. DNS externo, VPN o DNS cifrado pueden evitar el filtro. El registro DNS no revela búsquedas individuales en páginas HTTPS.
-
-## Persistencia y disponibilidad
-
-SQLite guarda permisos y conexión en `companion-data`. La app revisa plazos cada 10 segundos y reintenta errores; si la app está parada o AdGuard no está disponible al vencer, el permiso continúa hasta recuperar la conexión. No uses `docker compose down -v` salvo que quieras borrar el estado. Haz una copia del volumen antes de actualizar. Protege el volumen y `.env`: contienen datos de acceso.
+| Tema | Guía |
+| --- | --- |
+| Clientes de AdGuard, herencia, permisos temporales y persistencia | [clientes-y-herencia.md](docs/clientes-y-herencia.md) |
+| Usuarios, roles y aprobación de solicitudes | [usuarios-y-roles.md](docs/usuarios-y-roles.md) |
+| Avisos, Web Push y perfiles | [avisos.md](docs/avisos.md) · [activación y diagnóstico](docs/avisos-bloqueos.md) |
+| Instalar en Android e iPhone (PWA) | [pwa-movil.md](docs/pwa-movil.md) |
+| Nintendo Switch: conexión y tiempo extra | [nintendo.md](docs/nintendo.md) · [validación real](docs/nintendo-validacion-real.md) |
+| Diagnóstico de conexión con AdGuard | [diagnostico.md](docs/diagnostico.md) |
+| Iconos, imágenes y acceso con Authentik | [iconos-y-authentik.md](docs/iconos-y-authentik.md) · [Authentik](docs/authentik.md) |
+| Publicar la imagen en Docker Hub | [publicacion.md](docs/publicacion.md) |
+| Migrar desde adguard-familia | [migracion-adguard-familia.md](docs/migracion-adguard-familia.md) |
 
 ## Desarrollo y demostración
 
@@ -74,117 +66,9 @@ El modo demostración simula Emma y Martín; no cambia ningún AdGuard real. El 
 
 ```sh
 python -m pip install -r requirements.txt
-python -m unittest -v test_app.py test_diagnostics.py test_auth.py test_nintendo.py test_nintendo_routes.py
+python -m unittest -v test_app.py test_diagnostics.py test_auth.py test_nintendo.py test_nintendo_routes.py test_oidc.py test_catalog.py test_blocked_alerts.py test_notification_center.py
 python test_http.py
 node test_ui.cjs
 ```
 
 Pruebas de caducidad tras reinicio, permisos simultáneos, herencia global, cambios globales y de cliente durante permisos, recuperación de errores, clientes dinámicos, validación y protección de credenciales. La integración debe verificarse con la versión instalada de AdGuard Home; las pruebas locales usan el simulador. El workflow también ejecuta `test_browser.cjs` con Playwright para comprobar escritorio, móvil, favoritos, categorías, ajustes y preservación de formularios; sus capturas se guardan en el artefacto `ui-previews`.
-
-## Publicar en GitHub y Docker Hub
-
-El workflow `.github/workflows/docker.yml` ejecuta pruebas y publica imágenes multi arquitectura desde `main` y etiquetas `v*`. En GitHub → Settings → Secrets and variables → Actions configura:
-
-- Variable **DOCKERHUB_USERNAME**: usuario u organización de Docker Hub.
-- Secreto **DOCKERHUB_TOKEN**: token de Docker Hub con permisos de escritura al repositorio `parental`.
-
-No subas el token a archivos ni commits. Crea el repositorio Docker Hub `parental` en tu cuenta y elige su visibilidad. Para publicar una versión estable, crea una etiqueta como `v0.2.0` después de superar las pruebas. Hasta que el workflow termine correctamente, la imagen no está disponible para instalar.
-
-## Diagnóstico de conexión
-
-En **Ajustes → Integraciones → AdGuard Home**, usa **Probar conexión** y **Actualizar diagnóstico**. El panel distingue HTTP 401/403/404, timeout, DNS, conexión rechazada, certificados y respuestas no JSON, indicando el endpoint. Los últimos 100 resultados se conservan en memoria; los fallos se registran también con `docker compose logs --tail=100 companion`. No se registran contraseñas ni cabeceras de autorización. La actualización automática se pausa en las conexiones de AdGuard y Nintendo y mientras se editan formularios.
-
-## Usuarios, roles y solicitudes
-
-Al actualizar se conservan los clientes, la conexión y los permisos. La primera entrada pide APP_TOKEN para crear un administrador con usuario y contraseña (mínimo 12 caracteres). Una vez creado, APP_TOKEN deja de autorizar la API; todas las personas entran con su cuenta.
-
-En **Usuarios**, el administrador crea cuentas y asigna clientes:
-
-| Rol | Acceso |
-| --- | --- |
-| Administrador | Usuarios, servidor, ajustes globales, todos los clientes, permisos y auditoría. |
-| Responsable | Aprobar/rechazar solicitudes y conceder/cancelar permisos en clientes asignados. Edición permanente solo si se activa expresamente. |
-| Solicitante | Restricciones y permisos de clientes asignados; solicitar acceso y retirar sus solicitudes pendientes. Nunca desbloquea por su cuenta. No ve historial DNS. |
-| Observador | Consulta de dispositivos asignados, actividad y permisos; sin cambios ni aprobaciones. |
-
-Los límites de aprobación se configuran por cuenta responsable. No hay cupos automáticos ni autoaprobación. Las solicitudes caducan a las 24 horas; el permiso comienza al concederse y cada ampliación necesita aprobación. La pantalla **Solicitudes** permite al responsable ajustar los minutos y decidir. Un error de aplicación se muestra para revisar los permisos antes de reintentar. **Registro** conserva los últimos 5000 accesos/cambios/aprobaciones. No registra contraseñas.
-
-Las contraseñas se guardan con scrypt y sal individual. Las sesiones usan cookies HttpOnly, SameSite=Strict y caducan a las 12 horas. Al modificar una cuenta se cierran sus sesiones. El rol, la asignación y el límite se verifican en el servidor; ocultar botones no es la autorización. Los POST autenticados verifican un token CSRF. El proxy HTTPS debe enviar `X-Forwarded-Proto: https` para marcar la cookie Secure.
-
-## Instalar en Android e iPhone
-
-Es una app web instalable (PWA), no un paquete APK ni una app de App Store. Publica la instalación doméstica detrás de HTTPS con un certificado confiable.
-
-- **Android:** abre el panel HTTPS en Chrome, menú → Instalar aplicación o Añadir a pantalla de inicio.
-- **iPhone:** abre el panel HTTPS en Safari, Compartir → Añadir a pantalla de inicio.
-
-En **Ajustes → Instalar Parental** encontrarás el botón de instalación cuando el navegador lo permita o las instrucciones correspondientes. Safari en iPhone no muestra el mismo aviso automático de instalación que Chrome: se ofrece una guía de **Compartir → Añadir a pantalla de inicio**. La recomendación se puede ocultar y no se muestra si la app ya está instalada.
-
-El diseño se adapta al móvil e incluye el nuevo icono de Parental, icono de inicio de iOS de 180 px, variantes de 192/512 px, favicon, manifest y modo independiente. Se conserva el identificador de la PWA. La caché versionada guarda únicamente recursos estáticos públicos (fuentes, estilos, scripts e iconos). No se almacena contenido privado en caché y se muestra una página de desconexión si el servidor no responde. La gestión y las aprobaciones necesitan conexión. Los avisos de nuevas solicitudes y bloqueos usan Web Push cuando se registra el dispositivo; en iPhone se requiere la PWA instalada y permisos. Hay diagnóstico y pruebas diferenciadas de entrega local/desde el servidor.
-
-Para actualizar la imagen sin borrar cuentas ni configuración:
-
-```sh
-docker compose pull
-docker compose up -d
-```
-
-Después recarga el navegador. Si iOS conserva el nombre o icono anterior del acceso directo, retira solo ese acceso de la pantalla de inicio y vuelve a añadirlo desde Safari. Esto no borra las cuentas del servidor. No borres los volúmenes. Los archivos de cuentas, sesiones y auditoría se guardan en `/data/accounts.db`.
-
-## Nintendo: conexión directa y tiempo extra
-
-Esta integración conecta directamente con Nintendo Switch Parental Controls; no necesita Home Assistant. Se implementa mediante `pynintendoparental==2.6.3`, una biblioteca no oficial. Depende de la nube de Nintendo y la consola necesita Internet para sincronizar. No se incluyen integraciones asistidas.
-
-1. Entra como administrador y abre **Ajustes → Integraciones → Nintendo**.
-2. Pulsa **Conectar Nintendo**. Se abre el inicio de sesión de la cuenta oficial; la contraseña no se introduce en esta app.
-3. Realiza el proceso en un ordenador/navegador sin la app oficial de controles parentales que capture la redirección. En la pantalla de selección de cuenta, copia la dirección del botón **Seleccionar esta persona**, sin abrirlo, y pégala en el formulario de conexión. Es un enlace sensible: no lo compartas en chat ni registros.
-4. Confirma la zona horaria de la consola, por defecto `Europe/Madrid`.
-5. En **Usuarios**, asigna la consola a los responsables y solicitantes correspondientes. Los límites son por consola, no por jugador individual.
-
-Las tarjetas Nintendo muestran tiempo jugado, presupuesto pendiente estimado y hora tope de hoy. El popup tiene **Tiempo extra** y **Ajustes**. El presupuesto diario adicional y la ampliación de la hora tope se leen y verifican por separado; una ampliación del reloj no se añade a los minutos del presupuesto. **Añadir tiempo extra** ofrece 5, 10, 15, 20, 25, 30, **40 y 60 minutos más**. Se suman al presupuesto que aún quede; no se sustituye por esa cifra. 60 se envía como una concesión nativa; 40 se ejecuta como 30 + 5 + 5 bajo una sola aprobación, con una lectura confirmada antes de cada nuevo paso. Se muestra el progreso parcial y no se repite ninguna petición incierta. El trabajador continúa los pasos todavía no enviados después de un reinicio. Un solicitante solo puede pedirlo; un responsable autorizado debe aprobar. Los minutos se consumen al jugar hoy: no son una cuenta atrás desde la aprobación. Un límite diario de 0 minutos admite ampliaciones. La visibilidad de las alarmas no impide gestionarlas; tampoco la ausencia de suspensión automática, que se muestra como aviso porque el juego podría continuar al agotarse el presupuesto.
-
-**Permitir ampliar el horario de descanso** es una opción explícita de cada permiso. El solicitante puede pedirla y el adulto decide si autorizarla, independientemente de los minutos. Por defecto está desactivada. La app muestra el presupuesto resultante y la ventana hasta la hora tope, y verifica ambas dimensiones mediante una nueva lectura. Puedes conceder minutos aunque no quepa todo el presupuesto antes de esa hora: se avisa del tiempo que podría quedar sin usar y se conserva el bloqueo nocturno. La previsión muestra cómo se suman los minutos y explica los conflictos con el horario. Que Nintendo pida un segundo paso no obliga a ampliar el descanso: se confirma con `withBedtime=false` si no se ha autorizado un cambio de hora. Si falta una propuesta verificable, también se confirma solo el presupuesto, conservando la hora tope. Si está autorizada, la ampliación adicional se confirma únicamente cuando Nintendo la requiere; una respuesta incierta permanece pendiente y no provoca reenvíos automáticos. Los ajustes permanentes se conservan.
-
-Los cambios se registran con un identificador único antes de enviarse. Si hay un timeout, se conserva **Pendiente de confirmar** y solo se consulta el estado; no se reenvía automáticamente una concesión que podría duplicar minutos. Mientras haya una operación incierta no se concede otro bonus en la misma consola. Si una concesión aceptada obtiene después una lectura superior al objetivo o un estado incompatible —por ejemplo, tras ampliar desde la app oficial—, se cierra su seguimiento como sustituido y se detienen los pasos restantes. No se atribuyen esos minutos a nuestra concesión. Una respuesta perdida no se confirma ni se cierra automáticamente por ver más minutos. Un adulto asignado puede usar **Cerrar seguimiento** tras revisar Nintendo: requiere confirmación y una nueva lectura que coincida con los valores mostrados; solo cierra el registro local, sin añadir, retirar o reenviar tiempo. La concesión anterior podría aparecer después en Nintendo, por lo que se debe revisar el presupuesto antes de aprobar más. Las solicitudes afectadas se muestran como seguimiento cerrado, no como concedidas. **Detalles del seguimiento** permite copiar los valores esperados y leídos, la aceptación, el estado de la respuesta y las fechas, sin credenciales. Se diferencia la última consulta a la nube de la última sincronización de consola. **Confirmado por Nintendo** describe el estado en su nube; la consola puede tardar en sincronizar y se muestra la última sincronización. **Retirar ampliación de hoy** permite al adulto autorizado retirar todo el tiempo extra actual, incluido el añadido desde la app oficial. Nintendo no permite retirar solo una parte: se pide una confirmación explícita y se vuelven a comprobar los minutos y el horario antes de enviar el cambio. Si han cambiado, se debe actualizar y confirmar de nuevo. Los niños y observadores no pueden retirar ampliaciones.
-
-**Ajustes** permite editar el presupuesto diario común o el patrón semanal, la hora tope, el inicio de la mañana y la suspensión automática. Solo pueden guardar el administrador y los responsables asignados con permiso para editar políticas. **Jugar solo con permiso** prepara 0 minutos diarios y suspensión automática, manteniendo el horario que se muestra; se aplica únicamente al pulsar Guardar. No se cambia el calendario para cada concesión. Nintendo puede rechazar cambios permanentes mientras hay extra: la app pide retirarlo primero, con confirmación, y no lo elimina automáticamente. Una revisión impide sobrescribir ajustes cambiados desde otra interfaz; el resultado se verifica por lectura y no se reenvía una escritura incierta. Los campos sin guardar se conservan y la consulta periódica se pausa mientras se editan.
-
-Las respuestas perdidas de operaciones anteriores se conservan sin repetirse. Se libera únicamente el caso reconocido de una propuesta de horario incompleta que dejó pendiente el flujo antes de enviar su confirmación: no se reenvía esa operación y el adulto puede iniciar otra. Un permiso de 40 minutos puede quedar parcialmente confirmado: revisa los minutos efectivos antes de conceder una nueva ampliación. La aceptación en la nube y la sincronización en la consola se muestran separadas.
-
-La integración requiere validar el inicio de sesión y la sincronización contra tu consola real. Las pruebas automatizadas verifican contratos de la biblioteca, alcance de roles, aprobación separada del descanso, conflictos, persistencia e idempotencia con un proveedor simulado; no equivalen a una prueba con una cuenta Nintendo real.
-
-Los tokens de conexión se guardan únicamente en el volumen `/data` con permisos restringidos; nunca se devuelven al navegador ni aparecen en los diagnósticos. Conserva el volumen en las actualizaciones.
-
-## Perfiles, avisos y ajustes por integración
-
-En **Ajustes → Parental → Mi perfil → Cambiar cara**, elige una cara y pulsa Guardar cara. Se conserva en el servidor y cambiar solo el avatar no cierra tus sesiones. El administrador también puede asignarlas en Usuarios y roles. Los dispositivos tienen doce ilustraciones originales a color, seleccionables desde su detalle; los servicios mantienen sus logos reconocibles y colores de marca.
-
-**Ajustes → Integraciones** separa AdGuard Home (conexión, diagnóstico y configuración global de AdGuard) de Nintendo (cuenta y sincronización). Los ajustes de cada cliente o consola siguen en su popup.
-
-Activar avisos muestra el estado del permiso, registra Push y presenta los errores en el mismo bloque. Probar aviso comprueba la entrega local; Probar desde el servidor comprueba el envío desde Docker, también con Parental cerrada. En iPhone/iPad: HTTPS, iOS/iPadOS 16.4 o posterior y Parental instalada en la pantalla de inicio. Los otros destinos externos y sus acciones interactivas #48/#50 siguen pendientes. [Detalles, fuentes y licencias de iconos](docs/parental-perfiles-avisos-iconos.md).
-
-La burbuja del icono instalado utiliza Badging API cuando esté disponible y cuenta las solicitudes pendientes visibles para tu cuenta; se elimina al cerrar sesión. En Android depende del navegador y launcher y puede estar ligada a los avisos activos. No se promete actualización con el panel cerrado. Al pulsar un aviso, se abre y enfoca la solicitud de aprobación concreta o el cliente y servicio bloqueados; las aprobaciones siguen siendo explícitas y autenticadas.
-
-## Actualizar desde adguard-familia
-
-En el Compose de tu instalación actual cambia **las dos referencias de imagen**, incluidas preparar-datos y companion, a `jesusgarrigues/parental:latest` (o `${DOCKERHUB_USERNAME}/parental:${IMAGE_TAG:-latest}`). Conserva `.env`, el nombre del servicio, el volumen y el mismo directorio/nombre de proyecto Compose. Si cambias de directorio, utiliza `docker compose -p <nombre-del-proyecto-existente>` para seguir utilizando el volumen existente. Comprueba tu proyecto con `docker compose ls` y haz copia del volumen antes de actualizar.
-
-```sh
-docker compose pull
-docker compose up -d
-```
-
-No uses `down -v` ni crees un volumen nuevo para este cambio de nombre. Los datos, usuarios, solicitudes y conexiones permanecen en el volumen existente. El repositorio anterior de GitHub redirige a parental; Docker Hub conserva la imagen antigua, pero las nuevas publicaciones utilizan parental.
-
-## Iconos, imágenes y Authentik
-
-Los selectores contienen 91 iconos de clientes (Apple, Amazon/Alexa, redes, domótica y autohospedados) y 80 imágenes de usuarios, con categorías y búsqueda. [Catálogo y procedencia](docs/catalogos-apariencia.md).
-
-El acceso OIDC con Authentik se configura en **Ajustes → Parental → Acceso e identidad · Authentik**. Cada persona vincula su cuenta existente desde **Mi perfil → Acceso con Authentik**, confirmando la contraseña local, la identidad externa y después ambas cuentas. Roles, clientes, avatar e historial se conservan; no hay unión automática por email ni roles asignados por grupos externos. El acceso local sigue disponible para recuperación. [Guía de Authentik](docs/authentik.md).
-
-
-### Avisos selectivos de bloqueos
-
-Configura servicios, protecciones opcionales e intervalos por responsable en Ajustes → Parental → Intentos bloqueados, con personalización por cliente. Al pulsar el aviso se abre la autorización del cliente/servicio concreto. [Guía y diagnóstico](docs/avisos-bloqueos.md). Web Push entrega desde Docker con Parental cerrada; sin suscripción Push solo se entrega con el panel abierto. Los otros proveedores externos siguen pendientes.
-
-Los avisos automáticos ahora usan una bandeja persistente y Web Push desde Docker. Tras actualizar, pulsa **Activar avisos** en cada dispositivo aunque ya tuviera permiso. **Probar desde el servidor** comprueba el canal con el panel cerrado; consulta [activación y diagnóstico](docs/avisos-bloqueos.md).
