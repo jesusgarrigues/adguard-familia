@@ -5,8 +5,9 @@ from urllib.parse import urlsplit
 import auth, blocked_alerts
 
 # Push services identify the sender by this contact. Apple rejects the whole VAPID JWT (403 BadJwtToken)
-# when it names no real domain, e.g. localhost or mDNS ".local" names, so the default is a public URL.
-DEFAULT_CONTACT = 'https://github.com/jesusgarrigues/parental'
+# when it names no real domain, e.g. localhost or mDNS ".local" names, so the default is a public origin.
+# py_vapid only accepts an https contact without a path, so the default is the bare project host.
+DEFAULT_CONTACT = 'https://github.com'
 RESERVED_SUFFIXES = ('localhost', 'local', 'invalid', 'test', 'example', 'internal', 'lan', 'home', 'arpa', 'localdomain')
 
 
@@ -33,9 +34,10 @@ def vapid_contact(value):
             return value
     elif value.lower().startswith('https://'):
         url = urlsplit(value)
-        if public_host(url.hostname) and not (url.username or url.password):
-            return value
-    raise ValueError('WEB_PUSH_CONTACT debe ser mailto:correo@dominio-real o https://dominio-real')
+        # Origin only: py_vapid rejects https contacts with a path, port, query or credentials.
+        if public_host(url.hostname) and value.rstrip('/') == 'https://' + url.netloc and url.netloc == url.hostname:
+            return value.rstrip('/')
+    raise ValueError('WEB_PUSH_CONTACT debe ser mailto:correo@dominio-real o https://dominio-real sin ruta')
 
 
 def provider_error(error):

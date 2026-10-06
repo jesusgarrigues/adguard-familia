@@ -124,7 +124,12 @@ class CenterTests(unittest.TestCase):
         self.assertEqual(alerts.vapid_contact(''),alerts.DEFAULT_CONTACT)
         for good in ('mailto:padres@gmail.com','https://parental.midominio.es','mailto:admin@casa.example.org.es'):
             self.assertEqual(alerts.vapid_contact(good),good)
-        for bad in ('mailto:admin@parental.local','mailto:admin@localhost','https://localhost','https://192.168.1.2','mailto:a@nas.lan','http://midominio.es','mailto:a@example.com','admin@gmail.com','https://user:pw@midominio.es'):
+        self.assertEqual(alerts.vapid_contact('https://midominio.es/'),'https://midominio.es')
+        try:from py_vapid import _check_sub
+        except ImportError:_check_sub=None
+        if _check_sub:  # Everything accepted here must also pass the signing library's own check.
+            for good in (alerts.DEFAULT_CONTACT,'mailto:padres@gmail.com','https://parental.midominio.es'):self.assertTrue(_check_sub(alerts.vapid_contact(good)),good)
+        for bad in ('mailto:admin@parental.local','mailto:admin@localhost','https://localhost','https://192.168.1.2','mailto:a@nas.lan','http://midominio.es','mailto:a@example.com','admin@gmail.com','https://user:pw@midominio.es','https://github.com/jesusgarrigues/parental','https://midominio.es:8443'):
             with self.assertRaises(ValueError,msg=bad):alerts.vapid_contact(bad)
         self.assertEqual(alerts.Center(self.folder.name,contact='mailto:admin@parental.local').contact,alerts.DEFAULT_CONTACT)
 
@@ -162,7 +167,7 @@ class CenterTests(unittest.TestCase):
         self.assertTrue(captured[0][0].body);self.assertIn('authorization',{k.lower():v for k,v in captured[0][0].headers.items()})
         self.assertFalse(captured[0][1]['allow_redirects'])
         headers={k.lower():v for k,v in captured[0][0].headers.items()}
-        self.assertEqual(headers['urgency'],'high');self.assertIn('jesusgarrigues/parental',json.dumps(self.center.contact))
+        self.assertEqual(headers['urgency'],'high');self.assertEqual(self.center.contact,alerts.DEFAULT_CONTACT)
         self.assertEqual(captured[0][1]['timeout'],10)
 
 if __name__=='__main__':unittest.main()
