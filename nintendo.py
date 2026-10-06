@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import security
 import sqlite3
 import threading
 import time
@@ -911,7 +912,7 @@ class Connector:
         try:
             self._read()
         except Exception:
-            pass
+            security.log_failure('Nintendo: lectura posterior a la operación', logging.WARNING)
         result = self.operation_status(operation_id)
         latest = next((item for item in self._cache if item['key'] == device['key']), device)
         result['console_sync_pending'] = bool(latest.get('console_sync_pending'))
