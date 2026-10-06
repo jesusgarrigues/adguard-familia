@@ -27,7 +27,7 @@ Las imágenes publicadas por el workflow admiten `linux/amd64` y `linux/arm64`. 
 
 ### Avisos en el móvil (Web Push)
 
-Para recibir avisos con Parental cerrada, publica el panel por HTTPS, instala la PWA y pulsa **Activar avisos** en cada dispositivo. Opcionalmente define en `.env` `WEB_PUSH_CONTACT=mailto:correo@dominio-real` o `https://dominio-real`: Apple rechaza los avisos si el contacto usa `localhost`, `.local`, `.lan` o una IP. Detalles en [Avisos](docs/avisos.md) y [activación y diagnóstico](docs/avisos-bloqueos.md).
+Para recibir avisos con Parental cerrada, publica el panel por HTTPS, instala la PWA y pulsa **Activar avisos** en cada dispositivo. Opcionalmente define en `.env` `WEB_PUSH_CONTACT=mailto:correo@dominio-real` o `https://dominio-real` (sin ruta): Apple rechaza los avisos si el contacto usa `localhost`, `.local`, `.lan` o una IP. Detalles en [Avisos](docs/avisos.md) y [activación y diagnóstico](docs/avisos-bloqueos.md).
 
 ## Actualizar
 
