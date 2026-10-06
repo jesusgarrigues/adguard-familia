@@ -1,8 +1,60 @@
 """Durable, scoped notifications. Receiving or reading never grants access."""
-import base64, hashlib, json, os, re, time
+import base64, hashlib, ipaddress, json, logging, os, re, time
 from pathlib import Path
 from urllib.parse import urlsplit
 import auth, blocked_alerts
+
+# Push services identify the sender by this contact. Apple rejects the whole VAPID JWT (403 BadJwtToken)
+# when it names no real domain, e.g. localhost or mDNS ".local" names, so the default is a public origin.
+# py_vapid only accepts an https contact without a path, so the default is the bare project host.
+DEFAULT_CONTACT = 'https://github.com'
+RESERVED_SUFFIXES = ('localhost', 'local', 'invalid', 'test', 'example', 'internal', 'lan', 'home', 'arpa', 'localdomain')
+
+
+def public_host(host):
+    host = (host or '').lower().rstrip('.')
+    try:
+        ipaddress.ip_address(host)
+        return False
+    except ValueError:
+        pass
+    labels = host.split('.')
+    return (len(labels) >= 2 and all(re.fullmatch(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?', label) for label in labels)
+            and not labels[-1].isdigit() and labels[-1] not in RESERVED_SUFFIXES and labels[-2:] != ['example', 'com'])
+
+
+def vapid_contact(value):
+    """Return a contact Apple, Google and Mozilla accept: mailto: or https: with a real public domain."""
+    value = (value or '').strip()
+    if not value:
+        return DEFAULT_CONTACT
+    if value.lower().startswith('mailto:'):
+        address = value[7:]
+        if re.fullmatch(r'[^@\s:/]+@[^@\s]+', address) and public_host(address.rsplit('@', 1)[1]):
+            return value
+    elif value.lower().startswith('https://'):
+        url = urlsplit(value)
+        # Origin only: py_vapid rejects https contacts with a path, port, query or credentials.
+        if public_host(url.hostname) and value.rstrip('/') == 'https://' + url.netloc and url.netloc == url.hostname:
+            return value.rstrip('/')
+    raise ValueError('WEB_PUSH_CONTACT debe ser mailto:correo@dominio-real o https://dominio-real sin ruta')
+
+
+def provider_error(error):
+    """Short, non-sensitive reason for a rejected Push: status code plus the provider's reason token only."""
+    response = getattr(error, 'response', None)
+    code = getattr(response, 'status_code', None)
+    if not code:
+        return None, 'push_network_or_configuration'
+    reason = ''
+    try:
+        data = json.loads((getattr(response, 'text', '') or '')[:1000])
+        candidate = data.get('reason') if isinstance(data, dict) else None
+        if isinstance(candidate, str) and re.fullmatch(r'[A-Za-z]{1,40}', candidate):
+            reason = ':' + candidate
+    except (ValueError, TypeError):
+        pass
+    return code, 'push_provider_' + str(code) + reason
 
 
 def device_id(value):
@@ -35,8 +87,13 @@ def subscription(value):
 
 
 class Center:
-    def __init__(self, folder, clock=time.time, sender=None):
+    def __init__(self, folder, clock=time.time, sender=None, contact=None):
         self.clock, self.sender = clock, sender or self.send
+        try:
+            self.contact = vapid_contact(os.getenv('WEB_PUSH_CONTACT', '') if contact is None else contact)
+        except ValueError as error:
+            logging.warning('Avisos: %s; se usa el contacto predeterminado %s', error, DEFAULT_CONTACT)
+            self.contact = DEFAULT_CONTACT
         self.keyfile = Path(folder) / 'web-push.pem'
         with auth.LOCK:
             auth.DB.executescript('''
@@ -119,18 +176,30 @@ class Center:
         with auth.LOCK:
             old = auth.DB.execute('SELECT * FROM alert_devices WHERE id=?', (device,)).fetchone()
             if old and old['user_id'] != user['id']: raise auth.Forbidden('Este dispositivo pertenece a otra sesión; cierra sesión primero')
-            if not old and auth.DB.execute('SELECT COUNT(*) FROM alert_devices WHERE user_id=?',(user['id'],)).fetchone()[0]>=20:
-                raise ValueError('Límite de 20 dispositivos de avisos; desactiva uno antes de añadir otro')
+            moved = None
             if sub:
                 endpoint = sub['endpoint']
-                for row in auth.DB.execute('SELECT id,user_id,subscription FROM alert_devices WHERE subscription IS NOT NULL'):
+                for row in auth.DB.execute('SELECT id,user_id,subscription FROM alert_devices WHERE subscription IS NOT NULL').fetchall():
                     if json.loads(row['subscription'])['endpoint'] == endpoint and row['id'] != device:
-                        raise ValueError('Este navegador ya tiene otro dispositivo de avisos; desactívalo antes de activar otro')
-            auth.DB.execute('INSERT OR REPLACE INTO alert_devices VALUES(?,?,?,?,?)', (device,user['id'],json.dumps(sub) if sub else None,old['created'] if old else self.clock(),self.clock()))
+                        if row['user_id'] != user['id']:
+                            raise ValueError('Este navegador ya tiene otro dispositivo de avisos; desactívalo antes de activar otro')
+                        moved = row['id']  # Same browser and account with a new local id (storage cleared): keep its queue.
+            if not old and not moved and auth.DB.execute('SELECT COUNT(*) FROM alert_devices WHERE user_id=?',(user['id'],)).fetchone()[0]>=20:
+                raise ValueError('Límite de 20 dispositivos de avisos; desactiva uno antes de añadir otro')
+            if moved:
+                if old:
+                    auth.DB.execute('DELETE FROM alert_deliveries WHERE device=?', (moved,))
+                else:
+                    auth.DB.execute('UPDATE alert_deliveries SET device=? WHERE device=?', (device, moved))
+                auth.DB.execute('DELETE FROM alert_devices WHERE id=?', (moved,))
+            # A page load may briefly see no browser subscription; only Activar avisos, disconnect or an
+            # expired-subscription response change a stored one, so Push is never dropped silently.
+            stored = json.dumps(sub) if sub else old['subscription'] if old else None
+            auth.DB.execute('INSERT OR REPLACE INTO alert_devices VALUES(?,?,?,?,?)', (device,user['id'],stored,old['created'] if old else self.clock(),self.clock()))
             if sub and (not old or old['subscription']!=json.dumps(sub)):
                 auth.DB.execute("UPDATE alert_deliveries SET status='pending',attempts=0,due=?,error='' WHERE device=? AND status='failed' AND alert_id IN (SELECT id FROM alerts WHERE read_at IS NULL AND created>?)",(self.clock(),device,self.clock()-3600))
             auth.DB.commit()
-        return {'ok':True,'push':bool(sub),'public_key':self.public_key}
+        return {'ok':True,'push':bool(stored),'public_key':self.public_key}
 
     def disconnect(self, user, device):
         device_id(device)
@@ -227,7 +296,8 @@ class Center:
                 kwargs['allow_redirects']=False
                 return super().request(*args,**kwargs)
         with NoRedirectSession() as session:
-            response = webpush(subscription_info=sub,data=json.dumps(payload,ensure_ascii=False),vapid_private_key=str(self.keyfile),vapid_claims={'sub':os.getenv('WEB_PUSH_CONTACT','mailto:admin@parental.local')},ttl=3600,timeout=10,requests_session=session)
+            # Urgency high: Android otherwise defers normal-priority Web Push while the phone is idle (Doze).
+            response = webpush(subscription_info=sub,data=json.dumps(payload,ensure_ascii=False),vapid_private_key=str(self.keyfile),vapid_claims={'sub':self.contact},ttl=3600,timeout=10,headers={'Urgency':'high'},requests_session=session)
             if response.status_code not in (200,201,202): raise ValueError('push_provider_rejected')
 
     def dispatch(self):
@@ -247,13 +317,13 @@ class Center:
                 attempts = job['attempts']+1
                 auth.DB.execute("UPDATE alert_deliveries SET status='sending',attempts=?,due=? WHERE alert_id=? AND device=?", (attempts,self.clock()+60,job['alert_id'],job['device']))
                 payload = self.payload(user,item);auth.DB.commit()
-            accepted, code = False, None
+            accepted, code, error_code = False, None, ''
             try: self.sender(json.loads(job['subscription']),payload);accepted=True
             except Exception as error:
-                response = getattr(error,'response',None)
-                code = getattr(response,'status_code',None)
+                code, error_code = provider_error(error)
+                logging.warning('Avisos: Push rechazado (%s)', error_code)
             with auth.LOCK:
-                self.finish(job['alert_id'],job['device'],accepted,attempts,'push_provider_'+str(code) if code else 'push_network_or_configuration')
+                self.finish(job['alert_id'],job['device'],accepted,attempts,error_code)
                 if code in (404,410):
                     auth.DB.execute('UPDATE alert_devices SET subscription=NULL WHERE id=?', (job['device'],))
                     auth.DB.execute("UPDATE alert_deliveries SET status='failed',error='push_subscription_expired' WHERE device=? AND status!='accepted'", (job['device'],))

@@ -120,6 +120,42 @@ class CenterTests(unittest.TestCase):
         with self.assertRaises(auth.Forbidden):self.center.register(self.parent,{'device':self.device})
         with self.assertRaises(auth.Forbidden):self.center.disconnect(self.parent,self.device)
 
+    def test_vapid_contact_rejects_names_apple_refuses(self):
+        self.assertEqual(alerts.vapid_contact(''),alerts.DEFAULT_CONTACT)
+        for good in ('mailto:padres@gmail.com','https://parental.midominio.es','mailto:admin@casa.example.org.es'):
+            self.assertEqual(alerts.vapid_contact(good),good)
+        self.assertEqual(alerts.vapid_contact('https://midominio.es/'),'https://midominio.es')
+        try:from py_vapid import _check_sub
+        except ImportError:_check_sub=None
+        if _check_sub:  # Everything accepted here must also pass the signing library's own check.
+            for good in (alerts.DEFAULT_CONTACT,'mailto:padres@gmail.com','https://parental.midominio.es'):self.assertTrue(_check_sub(alerts.vapid_contact(good)),good)
+        for bad in ('mailto:admin@parental.local','mailto:admin@localhost','https://localhost','https://192.168.1.2','mailto:a@nas.lan','http://midominio.es','mailto:a@example.com','admin@gmail.com','https://user:pw@midominio.es','https://github.com/jesusgarrigues/parental','https://midominio.es:8443'):
+            with self.assertRaises(ValueError,msg=bad):alerts.vapid_contact(bad)
+        self.assertEqual(alerts.Center(self.folder.name,contact='mailto:admin@parental.local').contact,alerts.DEFAULT_CONTACT)
+
+    def test_provider_reason_is_recorded_without_private_details(self):
+        class Rejected(Exception):
+            response=type('Response',(),{'status_code':403,'text':'{"reason":"BadJwtToken","endpoint":"private-endpoint-secret"}'})()
+        def rejected(*args):raise Rejected('private-endpoint-secret')
+        self.center.sender=rejected;self.center.register(self.admin,{'device':self.device,'subscription':self.sub()});self.fresh()
+        with self.assertLogs(level='WARNING') as logs:self.center.dispatch()
+        data=self.center.snapshot(self.admin,self.device)
+        self.assertEqual(data['diagnostic']['last_delivery']['error'],'push_provider_403:BadJwtToken')
+        self.assertNotIn('private-endpoint-secret',json.dumps(data)+''.join(logs.output))
+
+    def test_page_load_without_browser_subscription_keeps_push(self):
+        self.center.register(self.admin,{'device':self.device,'subscription':self.sub()})
+        self.assertTrue(self.center.register(self.admin,{'device':self.device,'subscription':None})['push'])
+        self.fresh();self.center.dispatch();self.assertEqual(len(self.sent),1)
+
+    def test_same_browser_new_local_id_moves_queue_but_not_across_users(self):
+        sub=self.sub();self.center.register(self.admin,{'device':self.device,'subscription':sub});self.fresh()
+        other='device-abcdefghijklmnop'
+        self.assertTrue(self.center.register(self.admin,{'device':other,'subscription':sub})['push'])
+        self.assertFalse(self.center.snapshot(self.admin,self.device)['diagnostic']['registered'])
+        self.center.dispatch();self.assertEqual(len(self.sent),1)
+        with self.assertRaises(ValueError):self.center.register(self.parent,{'device':'device-zzzzzzzzzzzzzzzz','subscription':sub})
+
     def test_real_encryption_vapid_and_redirects_disabled(self):
         try:import requests, pywebpush
         except ImportError:self.skipTest('requests installed in CI')
@@ -130,6 +166,8 @@ class CenterTests(unittest.TestCase):
         with patch.object(requests.Session,'send',send):self.center.send(self.sub(),{'title':'Parental','body':'Test'})
         self.assertTrue(captured[0][0].body);self.assertIn('authorization',{k.lower():v for k,v in captured[0][0].headers.items()})
         self.assertFalse(captured[0][1]['allow_redirects'])
+        headers={k.lower():v for k,v in captured[0][0].headers.items()}
+        self.assertEqual(headers['urgency'],'high');self.assertEqual(self.center.contact,alerts.DEFAULT_CONTACT)
         self.assertEqual(captured[0][1]['timeout'],10)
 
 if __name__=='__main__':unittest.main()
