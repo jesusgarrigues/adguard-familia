@@ -43,10 +43,17 @@ El contador de Avisos muestra bloqueos no leídos. El icono instalado suma ese n
 
 El servidor envía Web Push cifrado con VAPID mediante Apple, Google o Mozilla; no hace falta una app nativa propia ni cuenta de desarrollador Apple. El contenedor necesita acceso HTTPS saliente a `web.push.apple.com`, `fcm.googleapis.com` o `updates.push.services.mozilla.com`, según el navegador. Si un firewall bloquea esas conexiones se informa el fallo y se reintenta. No se aceptan URLs Push arbitrarias o de la red privada y no se siguen redirecciones.
 
-La clave privada se genera una sola vez en `/data/web-push.pem` con permisos 0600. Conserva el volumen de datos para mantener suscripciones, cuentas y avisos. Opcionalmente configura `WEB_PUSH_CONTACT=mailto:tu-correo@tu-dominio` como contacto VAPID en el entorno del contenedor. No compartas la clave privada ni los endpoints y claves de una suscripción.
+La clave privada se genera una sola vez en `/data/web-push.pem` con permisos 0600. Conserva el volumen de datos para mantener suscripciones, cuentas y avisos. Opcionalmente configura `WEB_PUSH_CONTACT=mailto:tu-correo@tu-dominio` o `https://tu-dominio` como contacto VAPID en `.env`. Debe ser un dominio público real: Apple rechaza todos los avisos (403 `BadJwtToken`) si el contacto usa `localhost`, `.local`, `.lan` o una IP; un valor no válido se ignora con un aviso en el registro y se usa la URL pública del proyecto. No compartas la clave privada ni los endpoints y claves de una suscripción.
 
 Cerrar sesión desactiva los avisos de ese dispositivo; vuelve a activarlos después de entrar. Si caduca una suscripción, se indica en diagnóstico y Activar avisos puede renovarla. Sin Push registrado, el panel abierto comprueba pendientes en todas las pantallas sin tocar formularios sin guardar. Si falla la entrega, no se considera enviado automáticamente.
 
 Los diagnósticos por usuario distinguen servicios no seleccionados, consultas anteriores al cambio de preferencias, cooldown, consultas antiguas/fechas futuras y el último estado de entrega. El intervalo entre avisos y los bloqueos genéricos opcionales siguen en Ajustes → Intentos bloqueados.
 
 Web Push no sustituye a los proveedores externos de #48 ni a aprobar/editar directamente desde notificaciones de #50; esos alcances continúan pendientes. El clic del Push lleva a la pantalla de aprobación en Parental. Las pruebas automatizadas no sustituyen la prueba en el iPhone/Android real del usuario.
+
+### Si los avisos aparecen en la bandeja pero no en el móvil
+
+1. En **Avisos** se muestra un recuadro si este dispositivo no tiene Push o si el último envío ha fallado; pulsa **Activar avisos** desde la app instalada.
+2. Pulsa **Probar desde el servidor** y deja Parental en segundo plano unos 15 segundos.
+3. Si no llega, el diagnóstico indica el motivo del proveedor: `push_provider_403:BadJwtToken` (firma o contacto rechazado), `push_subscription_expired` (vuelve a activar) o `push_network_or_configuration` (el contenedor no sale a Internet).
+4. Los avisos se envían con prioridad alta para que Android no los retrase en reposo.

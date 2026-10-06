@@ -9,7 +9,25 @@
   function status(){if(lastError)return lastError;
     const delivery=diagnostic?.last_delivery;
     const labels={pending:'Aviso pendiente',sending:'Enviando aviso',retry:'Entrega fallida; se volverá a intentar',failed:'Entrega fallida: vuelve a activar los avisos',accepted:'Último aviso aceptado por el navegador o proveedor',skipped:'Envío omitido: leído, resuelto, antiguo o fuera de preferencias'};
-    return (push?'Envío desde el servidor activado, también con Parental cerrada.':'Sin Push registrado: entrega automática solo con Parental abierta. Pulsa Activar avisos para completar la activación.')+(delivery?' '+(labels[delivery.status]||delivery.status)+(delivery.error?' ('+delivery.error+')':''):'');}
+    return (push?'Envío desde el servidor activado, también con Parental cerrada.':'Sin Push registrado: entrega automática solo con Parental abierta. Pulsa Activar avisos para completar la activación.')+(delivery?' '+(labels[delivery.status]||delivery.status)+(delivery.error?' ('+delivery.error+')'+hint(delivery.error):''):'');}
+  // Plain-language next step for provider rejections; codes come from the server without private details.
+  function hint(error){
+    if(/BadJwtToken|VapidPkHashMismatch|push_provider_403/.test(error))return ' El proveedor de avisos ha rechazado la firma del servidor: actualiza Parental, revisa WEB_PUSH_CONTACT y vuelve a pulsar Activar avisos.';
+    if(/push_subscription_expired|push_provider_(404|410)/.test(error))return ' La suscripción de este dispositivo ya no es válida: pulsa Activar avisos.';
+    if(error==='push_network_or_configuration')return ' Docker no ha podido contactar con el proveedor de avisos: revisa la salida a Internet del contenedor.';
+    return '';}
+  // Shown in the inbox, not only in Ajustes, when this phone will not receive system notifications.
+  function warning(){
+    if(!diagnostic||!window.ParentalNotifications)return null;
+    const delivery=diagnostic.last_delivery,failing=push&&delivery&&['retry','failed'].includes(delivery.status);
+    if(push&&!failing)return null;
+    const box=make('div');box.className='card notification-warning';box.setAttribute('role','status');
+    box.append(make('strong',failing?'Los avisos no están llegando a este dispositivo':'Este dispositivo no recibirá avisos con Parental cerrada'));
+    box.append(make('p',status()));
+    const state=window.ParentalNotifications.state();
+    if(state.available){const button=make('button','Activar avisos');button.type='button';button.onclick=async()=>{button.disabled=true;try{await window.ParentalNotifications.enable();await poll();}finally{button.disabled=false;}};box.append(button);}
+    else box.append(make('p',state.hint));
+    return box;}
   function renderStatus(){for(const n of document.querySelectorAll('[data-auto-notification-status]'))n.textContent=status();for(const n of document.querySelectorAll('[data-auto-notification-detail]'))n.textContent=diagnostic?JSON.stringify(diagnostic,null,2):'Todavía no hay diagnóstico de este dispositivo.';window.ParentalNotifications?.update();}
   async function poll(){const account=callbacks.account?.();if(!account){current=null;registered=false;items=[];unread=0;push=false;window.ParentalUI?.setAlerts(0,null);renderLists();return;}if(running)return;running=true;
     try{
@@ -39,6 +57,7 @@
   async function readTarget(target){if(target?.alert_id)try{await read(target.alert_id);}catch(error){lastError='No se pudo marcar el aviso leído: '+error.message;renderStatus();}}
   function renderLists(){for(const root of document.querySelectorAll('[data-alert-inbox]')){root.replaceChildren();const row=make('div');row.className='row';row.append(make('h2','Avisos'));
     const all=make('button','Marcar todos como leídos');all.type='button';all.disabled=!unread;all.onclick=async()=>{all.disabled=true;try{await read(null);}catch(e){root.prepend(make('p',e.message));all.disabled=false;}};row.append(all);root.append(row);
+    const alert=warning();if(alert)root.append(alert);
     root.append(make('p','Se conservan hasta que los revises, durante un máximo de 30 días. Leer avisos no concede permisos.'));
     const blocks=items.filter(i=>i.kind==='blocked');if(!blocks.length)root.append(make('p','Sin avisos de bloqueos seleccionados. La actividad completa aparece debajo.'));
     for(const item of blocks){const card=make('article');card.className='card event '+(item.read_at?'':'blocked');card.append(make('strong',item.client+' · '+callbacks.name(item.service)+(item.read_at?'':' · Nuevo')));card.append(make('p',new Date(item.created*1000).toLocaleString()+(item.detail.domain?' · '+item.detail.domain:'')));const button=make('button','Revisar permiso');button.type='button';button.onclick=()=>callbacks.navigate(item.target);card.append(button);root.append(card);}root.append(make('h2','Actividad reciente'));}}
