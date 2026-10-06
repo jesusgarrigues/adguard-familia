@@ -11,12 +11,14 @@ import re
 import nintendo
 import oidc
 import blocked_alerts
+import notification_center
 from datetime import datetime
 
 ROOT = Path(__file__).parent
 DATA = Path(os.getenv('DATA_DIR', '/data'))
 DATA.mkdir(parents=True, exist_ok=True)
 auth.init(DATA)
+ALERTS=notification_center.Center(DATA)
 AUTHENTIK=oidc.Connector(DATA)
 NINTENDO=nintendo.Connector(DATA)
 TOKEN = os.environ.get('APP_TOKEN', '')
@@ -47,6 +49,7 @@ STATIC_ASSETS = {
     '/assets/authentik.js': ('assets/authentik.js','application/javascript'),
     '/assets/identity.js': ('assets/identity.js','application/javascript'),
     '/assets/blocked-notifications.js': ('assets/blocked-notifications.js','application/javascript'),
+    '/assets/notification-center.js': ('assets/notification-center.js','application/javascript'),
     '/assets/notifications.js': ('assets/notifications.js','application/javascript'),
     '/assets/notification-targets.js': ('assets/notification-targets.js','application/javascript'),
     '/assets/app-badges.js': ('assets/app-badges.js','application/javascript'),
@@ -599,7 +602,19 @@ def worker():
             except Exception: LAST_ERROR='Fallo al sincronizar AdGuard. Revisa el diagnóstico del servidor.';logging.error('Error interno de sincronización (sin datos de credenciales)')
         try: refresh_nintendo_requests()
         except Exception: logging.warning('Nintendo: no se ha podido actualizar el estado de confirmación')
+        try:
+            with LOCK:
+                events=[dict(zip(('id','time','client','service','domain','kind'),row)) for row in DB.execute('SELECT * FROM events ORDER BY id DESC LIMIT 500')]
+            ALERTS.sync(events)
+        except Exception: logging.warning('Avisos: fallo de recogida; consulta el diagnóstico de avisos')
         time.sleep(10)
+
+
+def push_worker():
+    while True:
+        try: ALERTS.dispatch()
+        except Exception: logging.warning('Avisos: fallo de envío Push (sin credenciales ni destinos)')
+        time.sleep(5)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -678,6 +693,9 @@ class Handler(BaseHTTPRequestHandler):
         if not user: return self.respond(401,{'error':'Inicia sesión para continuar'})
         try:
             if self.path=='/api/me': return self.respond(200,{'user':user,'csrf':user['csrf']})
+            if asset_path=='/api/me/alerts':
+                query=parse_qs(urlsplit(self.path).query)
+                return self.respond(200,ALERTS.snapshot(user,query.get('device',[None])[0]))
             if self.path=='/api/me/notifications':
                 with LOCK: return self.respond(200,notification_settings(user))
             if self.path=='/api/me/authentik': return self.respond(200,AUTHENTIK.status(user,self.cookie_token(),self.oidc_binding()))
@@ -716,6 +734,11 @@ class Handler(BaseHTTPRequestHandler):
             user=self.user()
             if not user: return self.respond(401,{'error':'Inicia sesión para continuar'})
             if not hmac.compare_digest(self.headers.get('X-CSRF-Token',''),user['csrf']): raise auth.Forbidden('Sesión inválida. Vuelve a entrar')
+            if self.path=='/api/me/alerts/device': return self.respond(200,ALERTS.register(user,body))
+            if self.path=='/api/me/alerts/disconnect': return self.respond(200,ALERTS.disconnect(user,body.get('device')))
+            if self.path=='/api/me/alerts/read': return self.respond(200,ALERTS.read(user,body))
+            if self.path=='/api/me/alerts/result': return self.respond(200,ALERTS.delivery(user,body))
+            if self.path=='/api/me/alerts/test': return self.respond(200,ALERTS.test(user,body))
             if self.path=='/api/me/notifications':
                 with LOCK: return self.respond(200,save_notification_settings(user,body))
             if self.path=='/api/me/authentik/start':
@@ -726,7 +749,9 @@ class Handler(BaseHTTPRequestHandler):
             if self.path=='/api/me/authentik/unlink': return self.respond(200,AUTHENTIK.unlink(user,body,self.client_address[0]))
             if self.path=='/api/authentik/config': return self.respond(200,AUTHENTIK.save(user,body,self.client_address[0]))
             if self.path=='/api/authentik/test': return self.respond(200,AUTHENTIK.test(user))
-            if self.path=='/api/auth/logout': auth.logout(self.cookie_token());return self.respond(200,{'ok':True})
+            if self.path=='/api/auth/logout':
+                if body.get('device'): ALERTS.disconnect(user,body['device'])
+                auth.logout(self.cookie_token());return self.respond(200,{'ok':True})
             if self.path=='/api/me/avatar':
                 if set(body)-{'avatar'}: raise ValueError('Solo puedes cambiar tu cara desde este formulario')
                 return self.respond(200,{'user':auth.save_avatar(user,body)})
@@ -831,4 +856,5 @@ class Handler(BaseHTTPRequestHandler):
 if __name__=='__main__':
     if len(TOKEN)<16: raise SystemExit('Configura APP_TOKEN con al menos 16 caracteres')
     threading.Thread(target=worker,daemon=True).start()
+    threading.Thread(target=push_worker,daemon=True).start()
     ThreadingHTTPServer(('0.0.0.0',8080),Handler).serve_forever()

@@ -63,6 +63,15 @@ try:
     rid=child.call('request',{'client':'iMac de Emma','service':'youtube','minutes':20,'reason':'Vídeo de clase'})['id']
     assert admin.call('state')['leases']==[]
     parent=Client();parent.call('auth/login',{'username':'parent','password':'parent-password-1234'})
+    alert_device='http-device-1234567890'
+    admin.call('me/alerts/device',{'device':alert_device})
+    assert admin.call('me/alerts?device='+alert_device)['diagnostic']['registered']
+    parent.call('me/alerts/device',{'device':alert_device},403)
+    child.call('me/alerts/read',{'id':999999},403)
+    parent.call('me/alerts/device',{'device':'other-device-1234567890','subscription':{'endpoint':'https://127.0.0.1/private','keys':{}}},400)
+    admin.csrf='invalid';admin.call('me/alerts/read',{'id':None},403);admin.call('me')
+    admin.call('me/alerts/disconnect',{'device':alert_device})
+    assert not admin.call('me/alerts?device='+alert_device)['diagnostic']['registered']
     prefs=parent.call('me/notifications');assert [c['name'] for c in prefs['clients']]==['iMac de Emma']
     config=prefs['preferences'];config['mode']='selected';config['services']=['youtube']
     parent.call('me/notifications',config)

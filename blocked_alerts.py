@@ -61,26 +61,36 @@ def save(user, body, catalog, allowed):
 
 
 def eligible(user, events, config, now=None):
+    return evaluate(user,events,config,now)[0]
+
+
+def evaluate(user, events, config, now=None):
     """Pure feed suitable for web and future external channels. No delivery claims."""
     if user['role'] not in ('admin', 'responsable'):
-        return []
+        return [], {'role':len(events)}
     now = time.time() if now is None else now
     preference = config['preferences']
     last = {}
     result = []
+    reasons={}
+    def excluded(reason): reasons[reason]=reasons.get(reason,0)+1
     for event in sorted(events, key=lambda item: (item['time'], item['id'])):
         if event['kind'] != 'blocked' or (user['role'] != 'admin' and event['client'] not in user['clients']):
+            excluded('not_blocked_or_outside_scope')
             continue
         chosen = preference['clients'].get(event['client'], preference)
         service = event['service']
         selected = service in chosen['protections'] if service.startswith('@') else chosen['mode'] == 'all' or (chosen['mode'] == 'selected' and service in chosen['services'])
         if not selected or event['time'] <= config['updated']:
+            excluded('service_not_selected' if not selected else 'before_preferences_changed')
             continue
         key = (event['client'], service)
         if event['time'] - last.get(key, float('-inf')) < preference['cooldown_minutes'] * 60:
+            excluded('cooldown')
             continue
         last[key] = event['time']
         # Backfilled/history queries are activity, never new notifications.
         if now - 120 <= event['time'] <= now + 30:
             result.append(event)
-    return result
+        else: excluded('older_than_120_seconds' if event['time']<now-120 else 'future_timestamp')
+    return result,reasons

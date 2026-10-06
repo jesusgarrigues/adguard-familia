@@ -1,0 +1,135 @@
+import base64, copy, json, tempfile, time, unittest
+from pathlib import Path
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+import auth, notification_center as alerts
+
+
+class CenterTests(unittest.TestCase):
+    def setUp(self):
+        self.old=auth.DB;self.folder=tempfile.TemporaryDirectory();auth.init(self.folder.name)
+        self.now=time.time();self.sent=[]
+        self.center=alerts.Center(self.folder.name,clock=lambda:self.now,sender=lambda sub,payload:self.sent.append(payload))
+        self.admin=auth.save_user(None,{'username':'admin','password':'test-password-1234','role':'admin'},bootstrap=True)
+        self.parent=auth.save_user(self.admin,{'username':'parent','password':'test-password-1234','role':'responsable','clients':['TV']})
+        self.child=auth.save_user(self.admin,{'username':'child','password':'test-password-1234','role':'solicitante','clients':['TV']})
+        self.device='device-1234567890123456'
+        self.center.register(self.admin,{'device':self.device})
+
+    def tearDown(self):
+        auth.DB.close();auth.DB=self.old;self.folder.cleanup()
+
+    def event(self,identifier=1,client='TV',service='youtube',when=None):
+        return {'id':identifier,'time':self.now if when is None else when,'client':client,'service':service,'domain':'accounts.youtube.com','kind':'blocked'}
+
+    def fresh(self):
+        self.now+=10;self.center.sync([self.event()]);return self.center.snapshot(self.admin,self.device)['items'][0]
+
+    def sub(self,endpoint='https://web.push.apple.com/example'):
+        key=ec.generate_private_key(ec.SECP256R1()).public_key().public_bytes(serialization.Encoding.X962,serialization.PublicFormat.UncompressedPoint)
+        return {'endpoint':endpoint,'keys':{'auth':base64.urlsafe_b64encode(b'a'*16).rstrip(b'=').decode(),'p256dh':base64.urlsafe_b64encode(key).rstrip(b'=').decode()}}
+
+    def test_old_history_not_replayed(self):
+        self.center.sync([self.event(when=self.now-20)])
+        self.assertEqual(self.center.snapshot(self.admin,self.device)['unread'],0)
+
+    def test_first_event_not_lost_and_unread_survives_11_minutes(self):
+        item=self.fresh();self.now+=660
+        data=self.center.snapshot(self.admin,self.device)
+        self.assertEqual(data['unread'],1);self.assertEqual(data['deliveries'][0]['id'],item['id'])
+        self.assertEqual(auth.DB.execute('SELECT COUNT(*) FROM requests').fetchone()[0],0)
+
+    def test_failure_retries_without_marking_read_and_claim_is_atomic(self):
+        item=self.fresh();body={'device':self.device,'id':item['id'],'status':'claim'}
+        self.assertTrue(self.center.delivery(self.admin,body)['claimed'])
+        self.assertFalse(self.center.delivery(self.admin,body)['claimed'])
+        self.center.delivery(self.admin,dict(body,status='failed'))
+        self.assertEqual(self.center.snapshot(self.admin,self.device)['deliveries'],[])
+        self.now+=21;self.assertTrue(self.center.delivery(self.admin,body)['claimed'])
+        self.center.delivery(self.admin,dict(body,status='accepted'))
+        data=self.center.snapshot(self.admin,self.device);self.assertEqual(data['unread'],1);self.assertEqual(data['deliveries'],[])
+
+    def test_restart_and_repeated_sources_not_duplicated(self):
+        item=self.fresh();event=self.event();self.center.sync([event])
+        again=alerts.Center(self.folder.name,clock=lambda:self.now)
+        self.assertEqual(again.public_key,self.center.public_key)
+        again.sync([event]);self.assertEqual(again.snapshot(self.admin)['unread'],1)
+        self.assertEqual(again.snapshot(self.admin)['items'][0]['id'],item['id'])
+        self.assertEqual(Path(self.folder.name,'web-push.pem').stat().st_mode&0o777,0o600)
+
+    def test_selection_cooldown_and_generic_dns(self):
+        self.now+=10;self.center.sync([self.event(),self.event(2,service='@filtering'),self.event(3,when=self.now+10)])
+        self.assertEqual(self.center.snapshot(self.admin)['unread'],1)
+
+    def test_roles_scope_and_other_users_read(self):
+        item=self.fresh();self.assertEqual(self.center.snapshot(self.parent)['unread'],1)
+        self.assertEqual(self.center.snapshot(self.child)['unread'],0)
+        with self.assertRaises(auth.Forbidden):self.center.read(self.parent,{'id':item['id']})
+        with self.assertRaises(auth.Forbidden):self.center.delivery(self.child,{'device':self.device,'id':item['id'],'status':'claim'})
+        self.parent['clients']=[];self.assertEqual(self.center.snapshot(self.parent)['unread'],0)
+
+    def test_read_idempotent_and_does_not_grant(self):
+        item=self.fresh();self.center.read(self.admin,{'id':item['id']});self.center.read(self.admin,{'id':item['id']})
+        self.assertEqual(self.center.snapshot(self.admin)['unread'],0)
+        self.assertEqual(auth.DB.execute('SELECT COUNT(*) FROM requests').fetchone()[0],0)
+
+    def test_requests_counted_once_in_combined_badge(self):
+        self.now+=10
+        auth.DB.execute("INSERT INTO requests(user_id,client,service,minutes,status,created) VALUES(?,?,'youtube',10,'pending',?)",(self.child['id'],'TV',self.now));auth.DB.commit()
+        self.center.sync([self.event()]);data=self.center.snapshot(self.admin,self.device)
+        self.assertEqual(data['pending_requests'],1);self.assertEqual(data['unread'],1);self.assertEqual(data['badge'],2)
+        self.assertEqual(len(data['deliveries']),2)
+        self.center.read(self.admin,{'id':None});self.assertEqual(self.center.snapshot(self.admin)['badge'],1)
+
+    def test_push_server_delivery_without_browser_and_no_foreground_duplicate(self):
+        self.center.register(self.admin,{'device':self.device,'subscription':self.sub()});self.fresh()
+        self.center.dispatch();self.assertEqual(len(self.sent),1);self.assertEqual(self.sent[0]['badge_count'],1)
+        self.center.dispatch();self.assertEqual(len(self.sent),1)
+        item=self.center.snapshot(self.admin,self.device)['items'][0]
+        with self.assertRaises(auth.Forbidden):self.center.delivery(self.admin,{'device':self.device,'id':item['id'],'status':'claim'})
+
+    def test_push_failure_and_retry_redacts_private_exception(self):
+        def failed(*args):raise RuntimeError('private-endpoint-secret')
+        self.center.sender=failed;self.center.register(self.admin,{'device':self.device,'subscription':self.sub()});self.fresh();self.center.dispatch()
+        data=self.center.snapshot(self.admin,self.device);self.assertEqual(data['diagnostic']['last_delivery']['status'],'retry')
+        self.assertNotIn('private-endpoint-secret',json.dumps(data))
+        self.now+=21;self.center.sender=lambda sub,payload:self.sent.append(payload);self.center.dispatch();self.assertEqual(len(self.sent),1)
+
+    def test_expired_subscription_is_disabled(self):
+        class Gone(Exception): response=type('Response',(),{'status_code':410})()
+        def gone(*args):raise Gone()
+        self.center.sender=gone;self.center.register(self.admin,{'device':self.device,'subscription':self.sub()});self.fresh();self.center.dispatch()
+        data=self.center.snapshot(self.admin,self.device);self.assertFalse(data['diagnostic']['push']);self.assertEqual(data['diagnostic']['last_delivery']['error'],'push_subscription_expired')
+
+    def test_logout_disconnect_cancels_pending_device_push(self):
+        self.center.register(self.admin,{'device':self.device,'subscription':self.sub()});self.fresh()
+        self.center.disconnect(self.admin,self.device);self.center.dispatch();self.assertEqual(self.sent,[])
+
+    def test_permissions_revalidated_before_push(self):
+        self.center.register(self.admin,{'device':self.device,'subscription':self.sub()});self.fresh()
+        auth.DB.execute('UPDATE users SET active=0 WHERE id=?',(self.admin['id'],));auth.DB.commit()
+        self.center.dispatch();self.assertEqual(self.sent,[])
+
+    def test_endpoint_validation_prevents_private_and_redirect_destinations(self):
+        for endpoint in ('http://web.push.apple.com/test','https://127.0.0.1/api','https://web.push.apple.com.evil.test/x','https://user@web.push.apple.com/x','https://web.push.apple.com:123/x'):
+            with self.assertRaises(ValueError):alerts.subscription(self.sub(endpoint))
+        for endpoint in ('https://web.push.apple.com/test','https://fcm.googleapis.com/wp/test','https://updates.push.services.mozilla.com/wpush/test'):
+            self.assertEqual(alerts.subscription(self.sub(endpoint))['endpoint'],endpoint)
+
+    def test_devices_cannot_be_taken_over(self):
+        with self.assertRaises(auth.Forbidden):self.center.register(self.parent,{'device':self.device})
+        with self.assertRaises(auth.Forbidden):self.center.disconnect(self.parent,self.device)
+
+    def test_real_encryption_vapid_and_redirects_disabled(self):
+        try:import requests, pywebpush
+        except ImportError:self.skipTest('requests installed in CI')
+        from unittest.mock import patch
+        captured=[]
+        def send(session,request,**kwargs):
+            captured.append((request,kwargs));response=requests.Response();response.status_code=201;response._content=b'';return response
+        with patch.object(requests.Session,'send',send):self.center.send(self.sub(),{'title':'Parental','body':'Test'})
+        self.assertTrue(captured[0][0].body);self.assertIn('authorization',{k.lower():v for k,v in captured[0][0].headers.items()})
+        self.assertFalse(captured[0][1]['allow_redirects'])
+        self.assertEqual(captured[0][1]['timeout'],10)
+
+if __name__=='__main__':unittest.main()
