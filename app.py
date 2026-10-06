@@ -37,6 +37,10 @@ CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS client_appearance (identity TEXT PRIMARY KEY, icon TEXT NOT NULL);
 '''
 )
+# Who granted each temporary permit (#99). Older rows keep an empty author.
+if 'granted_by' not in [row[1] for row in DB.execute('PRAGMA table_info(leases)')]:
+    DB.execute("ALTER TABLE leases ADD COLUMN granted_by TEXT NOT NULL DEFAULT ''")
+    DB.commit()
 LAST_ERROR = ''
 LAST_POLL = {'status': 'waiting', 'message': 'Todavía no se ha leído el registro de consultas.'}
 DIAGNOSTICS = deque(maxlen=100)
@@ -578,7 +582,7 @@ def reconcile():
         raise RuntimeError('; '.join(failures))
 
 
-def permit(name, service, minutes, require_blocked=False):
+def permit(name, service, minutes, require_blocked=False, granted_by=''):
     if type(minutes) is not int or not 1 <= minutes <= 1440:
         raise ValueError('Duración entre 1 y 1440 minutos')
     services = {s['id'] for s in api('blocked_services/all')['blocked_services']} | set(RESTRICTIONS)
@@ -612,7 +616,10 @@ def permit(name, service, minutes, require_blocked=False):
     if not enabled:
         raise ValueError('Esta restricción no está activada en la configuración base')
     save_baseline(name, b)
-    DB.execute('INSERT OR REPLACE INTO leases VALUES(?,?,?)', (name, service, time.time() + minutes * 60))
+    DB.execute(
+        'INSERT OR REPLACE INTO leases(client,service,expires,granted_by) VALUES(?,?,?,?)',
+        (name, service, time.time() + minutes * 60, granted_by),
+    )
     DB.commit()
     reconcile()
 
@@ -891,7 +898,10 @@ def state():
         'base_effective': {n: effective(c, g) for n, c in bases.items()},
         'services': api('blocked_services/all')['blocked_services'],
         'global_config': g,
-        'leases': [dict(zip(('client', 'service', 'expires'), r)) for r in DB.execute('SELECT * FROM leases')],
+        'leases': [
+            dict(zip(('client', 'service', 'expires', 'granted_by'), r))
+            for r in DB.execute('SELECT client,service,expires,granted_by FROM leases')
+        ],
         'events': [
             dict(zip(('id', 'time', 'client', 'service', 'domain', 'kind'), r))
             for r in DB.execute('SELECT * FROM events ORDER BY id DESC LIMIT 100')
@@ -950,7 +960,30 @@ def nintendo_state(user, force=False):
     with LOCK:
         for device in data['devices']:
             attach_appearance(device, 'nintendo')
+            for key in ('pending_operation', 'last_operation'):
+                if device.get(key):
+                    device[key] = dict(device[key], actor=operation_actor(device[key]['operation_id']))
     return data
+
+
+def operation_actor(operation_id):
+    """Name of the adult behind a Nintendo operation: direct ids embed the user, request ids the reviewer."""
+    kind, _, rest = operation_id.partition(':')
+    with auth.LOCK:
+        if kind in ('direct', 'cancel', 'settings'):
+            uid = rest.split(':', 1)[0]
+            row = (
+                auth.DB.execute('SELECT username FROM users WHERE id=?', (int(uid),)).fetchone()
+                if uid.isdigit()
+                else None
+            )
+        elif kind == 'request' and rest.isdigit():
+            row = auth.DB.execute(
+                'SELECT u.username FROM requests r JOIN users u ON u.id=r.reviewer WHERE r.id=?', (int(rest),)
+            ).fetchone()
+        else:
+            row = None
+    return row['username'] if row else ''
 
 
 def device_catalog():
@@ -975,7 +1008,7 @@ def operation_key(user, body, kind='direct'):
     return kind + ':' + str(user['id']) + ':' + value
 
 
-def grant_access(client, service, minutes, operation_id=None, extend_bedtime=False):
+def grant_access(client, service, minutes, operation_id=None, extend_bedtime=False, granted_by=''):
     if client.startswith('nintendo:'):
         if service != '@nintendo':
             raise ValueError('Servicio Nintendo inválido')
@@ -984,7 +1017,7 @@ def grant_access(client, service, minutes, operation_id=None, extend_bedtime=Fal
         return NINTENDO.grant(client, minutes, operation_id, extend_bedtime=extend_bedtime)
     if extend_bedtime:
         raise ValueError('La ampliación del horario de descanso solo se admite para Nintendo')
-    permit(client, service, minutes)
+    permit(client, service, minutes, granted_by=granted_by)
     return {'status': 'confirmed', 'ok': True}
 
 
@@ -1436,7 +1469,12 @@ class Handler(BaseHTTPRequestHandler):
                         user,
                         body,
                         lambda c, s, m, extend_bedtime=False: grant_access(
-                            c, s, m, 'request:' + str(body['id']), extend_bedtime=extend_bedtime
+                            c,
+                            s,
+                            m,
+                            'request:' + str(body['id']),
+                            extend_bedtime=extend_bedtime,
+                            granted_by=user['username'],
                         ),
                     ) or {'ok': True}
                     if result.get('status') == 'failed':
@@ -1488,7 +1526,13 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 result = {'ok': True}
                 if self.path == '/api/permit':
-                    permit(body['client'], body['service'], body['minutes'], body.get('from_blocked_event', False))
+                    permit(
+                        body['client'],
+                        body['service'],
+                        body['minutes'],
+                        body.get('from_blocked_event', False),
+                        granted_by=user['username'],
+                    )
                 elif self.path == '/api/cancel':
                     DB.execute(
                         'UPDATE leases SET expires=0 WHERE client=? AND service=?', (body['client'], body['service'])
@@ -1522,7 +1566,12 @@ class Handler(BaseHTTPRequestHandler):
                         user,
                         body,
                         lambda c, s, m, extend_bedtime=False: grant_access(
-                            c, s, m, 'request:' + str(body['id']), extend_bedtime=extend_bedtime
+                            c,
+                            s,
+                            m,
+                            'request:' + str(body['id']),
+                            extend_bedtime=extend_bedtime,
+                            granted_by=user['username'],
                         ),
                     ) or {'ok': True}
                 else:
