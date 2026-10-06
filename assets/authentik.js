@@ -46,7 +46,7 @@
     try{
       let cfg=await options.request('authentik/config');if(!panel.isConnected)return;
       const fields=make('div');panel.insertBefore(fields,status);
-      const label=make('label','','toggle'),enabled=make('input');enabled.type='checkbox';enabled.checked=!!cfg.enabled;label.append(make('span','Habilitar inicio de sesión con Authentik'),enabled);fields.append(label);
+      const label=make('label','','toggle'),enabled=make('input');enabled.type='checkbox';enabled.checked=!!cfg.enabled;label.append(make('span','Habilitar inicio de sesión con Authentik'),enabled);fields.append(label);const trustLabel=make('label','','toggle'),trust=make('input');trust.type='checkbox';trust.checked=!!cfg.trust_email;trustLabel.append(make('span','Confiar en el correo de Authentik para enlazar el primer acceso con la cuenta que tenga ese correo'),trust);fields.append(trustLabel);fields.append(make('p','Actívalo solo si controlas tu Authentik: Authentik 2025.10 o posterior no marca los correos como verificados. Nunca se enlaza por nombre de usuario.','notification-scope'));
       const issuer=field(fields,'Issuer esperado',cfg.issuer||'');issuer.placeholder='https://auth.example.com/application/o/parental/';
       const discovery=field(fields,'URL de descubrimiento OIDC',cfg.discovery_url||'');discovery.placeholder='https://auth.example.com/application/o/parental/.well-known/openid-configuration';
       const id=field(fields,'Client ID',cfg.client_id||''),secret=field(fields,'Client secret (vacío conserva el guardado)','','password');secret.autocomplete='new-password';secret.placeholder=cfg.secret_set?'Secreto guardado':'';
@@ -57,7 +57,7 @@
       fields.addEventListener('input',()=>options.draft?.());
       const actions=make('div','','identity-actions'),save=button('Guardar Authentik',async()=>{
         if(!password.value){status.textContent='Confirma tu contraseña local para guardar.';password.focus();return;}
-        const body={enabled:enabled.checked,issuer:issuer.value,discovery_url:discovery.value,client_id:id.value,client_secret:secret.value,public_url:publicURL.value,password:password.value};
+        const body={enabled:enabled.checked,trust_email:trust.checked,issuer:issuer.value,discovery_url:discovery.value,client_id:id.value,client_secret:secret.value,public_url:publicURL.value,password:password.value};
         save.disabled=true;for(const input of fields.querySelectorAll('input'))input.disabled=true;status.textContent='Guardando…';
         try{cfg=await options.request('authentik/config',body);if(!panel.isConnected)return;password.value='';secret.value='';secret.placeholder=cfg.secret_set?'Secreto guardado':'';options.clean?.();status.textContent='Configuración guardada. Se han cerrado las sesiones de Authentik anteriores; el acceso local sigue disponible.';}
         catch(error){status.textContent='No se pudo guardar: '+error.message;}

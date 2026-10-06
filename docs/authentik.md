@@ -5,7 +5,7 @@ Parental puede utilizar tu Authentik autohospedado como proveedor OpenID Connect
 ## Configurar Authentik
 
 1. En la administración de Authentik, abre **Applications → Applications → New Application** y crea una aplicación llamada Parental, con slug `parental`.
-2. Elige un proveedor **OAuth2/OIDC**, cliente **Confidential**, y habilita **Authorization Code** y **PKCE S256**. Selecciona los scope mappings `openid` y `profile`.
+2. Elige un proveedor **OAuth2/OIDC**, cliente **Confidential**, y habilita **Authorization Code** y **PKCE S256**. Selecciona los scope mappings `openid`, `profile` y `email`.
 3. Selecciona una **Signing Key** asimétrica, por ejemplo RSA/RS256. No actives cifrado de ID tokens en esta versión.
 4. En Redirect URIs registra, con comparación estricta, la dirección exacta que muestra Parental. Por ejemplo: `https://parental.example.com/api/auth/oidc/callback`. No utilices comodines.
 5. Copia el Client ID y Client secret en la configuración privada de Parental. Nunca los publiques en incidencias o mensajes.
@@ -37,9 +37,18 @@ Cada persona realiza estos pasos con su cuenta local:
 3. Identificarse en Authentik.
 4. De vuelta en Parental, revisar las dos cuentas y pulsar **Vincular estas cuentas**. La confirmación caduca a los cinco minutos.
 
-Después aparece **Continuar con Authentik** al entrar. La cuenta conserva su ID, rol, avatar, clientes, límites e historial. No se crean cuentas automáticamente ni se unen por coincidencia de nombre o correo. Los grupos enviados por Authentik no conceden permisos en Parental. Una identidad externa no puede pertenecer a dos cuentas; una cuenta desactivada no puede entrar por ninguna vía.
+Después aparece **Continuar con Authentik** al entrar. La cuenta conserva su ID, rol, avatar, clientes, límites e historial. Nunca se unen cuentas por coincidencia de nombre de usuario. Los grupos enviados por Authentik no conceden permisos en Parental. Una identidad externa no puede pertenecer a dos cuentas; una cuenta desactivada no puede entrar por ninguna vía.
 
 El administrador ve el estado de vinculación al editar una cuenta en **Usuarios y roles** y puede desvincularla confirmando su propia contraseña local. La vinculación inicial exige que la persona pruebe las dos identidades desde su perfil; no hay importación masiva ni asignación arbitraria por nombre.
+
+## Enlace automático en el primer acceso
+
+Para no tener que vincular desde Mi perfil, el administrador puede indicar el **correo** de cada persona en **Usuarios y roles**. La primera vez que alguien entra con **Continuar con Authentik** (por ejemplo con Google), Parental enlaza su identidad con la única cuenta activa que tenga ese correo, si se cumple una de estas condiciones:
+
+- El ID token trae `email_verified: true`. Desde Authentik 2025.10 el mapeo por defecto envía `false`; puedes crear un scope mapping propio que devuelva `true` para usuarios que vienen de Google.
+- O el administrador activa **Confiar en el correo de Authentik** en la configuración. Hazlo solo si controlas tu Authentik y quién puede cambiar su correo en él.
+
+No se enlaza si el correo coincide con varias cuentas o con una cuenta desactivada, ni si esa cuenta ya tiene otra identidad. Cada enlace automático queda en el Registro de cambios. La vinculación manual desde Mi perfil sigue disponible.
 
 ## Recuperación y sesiones
 

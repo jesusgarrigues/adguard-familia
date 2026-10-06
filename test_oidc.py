@@ -87,6 +87,47 @@ class OIDCTests(unittest.TestCase):
         self.assertEqual(auth.DB.execute('SELECT count(*) FROM external_identities').fetchone()[0],0)
         self.assertEqual(auth.DB.execute('SELECT count(*) FROM users').fetchone()[0],3)
 
+    def test_first_login_links_by_verified_email_only(self):
+        auth.save_user(self.admin,{'id':self.child['id'],'email':'Emma@Example.test'})
+        state,binding,query=self.start(link=False)
+        self.assertIn('email',query['scope'][0].split())
+        with self.assertRaisesRegex(oidc.OIDCError,'no está vinculada'):self.conn.callback(state,'code',binding)  # email_verified missing
+        self.override={'email_verified':'true'}  # Only a JSON true counts.
+        state,binding,_=self.start(link=False)
+        with self.assertRaises(oidc.OIDCError):self.conn.callback(state,'code',binding)
+        self.override={'email_verified':True}
+        state,binding,_=self.start(link=False);result=self.conn.callback(state,'code',binding)
+        self.assertEqual(result['user']['id'],self.child['id'])
+        self.assertEqual(auth.DB.execute('SELECT user_id FROM external_identities WHERE subject=?',(self.sub,)).fetchone()[0],self.child['id'])
+        self.assertTrue(auth.DB.execute("SELECT 1 FROM audit WHERE action='authentik_auto_linked'").fetchone())
+
+    def test_trusted_authentik_email_links_unverified_but_never_by_name(self):
+        auth.save_user(self.admin,{'id':self.child['id'],'email':'emma@example.test'})
+        self.conn.path.write_text(json.dumps(self.cfg|{'trust_email':True}))
+        self.override={'preferred_username':'martin'}  # Username is ignored; the e-mail decides.
+        state,binding,_=self.start(link=False);result=self.conn.callback(state,'code',binding)
+        self.assertEqual(result['user']['username'],'emma')
+        self.override={'email':'nobody@example.test','preferred_username':'emma'};self.sub='another-subject'
+        state,binding,_=self.start(link=False)
+        with self.assertRaises(oidc.OIDCError):self.conn.callback(state,'code',binding)
+
+    def test_email_auto_link_skips_disabled_or_already_linked_accounts(self):
+        auth.save_user(self.admin,{'id':self.child['id'],'email':'emma@example.test'})
+        self.conn.path.write_text(json.dumps(self.cfg|{'trust_email':True}))
+        self.link()  # Emma already linked to immutable-subject.
+        self.sub='second-identity';state,binding,_=self.start(link=False)
+        with self.assertRaises(oidc.OIDCError):self.conn.callback(state,'code',binding)
+        auth.save_user(self.admin,{'id':self.other['id'],'email':'martin@example.test','active':False})
+        self.override={'email':'martin@example.test'};self.sub='third-identity';state,binding,_=self.start(link=False)
+        with self.assertRaises(oidc.OIDCError):self.conn.callback(state,'code',binding)
+        self.assertEqual(auth.DB.execute('SELECT count(*) FROM external_identities').fetchone()[0],1)
+
+    def test_user_email_is_validated_and_unique(self):
+        auth.save_user(self.admin,{'id':self.child['id'],'email':'emma@example.test'})
+        with self.assertRaisesRegex(ValueError,'otra cuenta'):auth.save_user(self.admin,{'id':self.other['id'],'email':'EMMA@example.test'})
+        with self.assertRaisesRegex(ValueError,'Correo'):auth.save_user(self.admin,{'id':self.other['id'],'email':'no-es-correo'})
+        self.assertEqual(auth.save_user(self.admin,{'id':self.other['id'],'email':''})['email'],'')
+
     def test_replay_other_browser_and_expiry(self):
         state,binding,_=self.start(link=False)
         with self.assertRaises(oidc.OIDCError):self.conn.callback(state,'code','stolen-binding')

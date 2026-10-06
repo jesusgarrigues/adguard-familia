@@ -349,7 +349,7 @@ const calls=[];let adguardDown=false,clientFailure=null,readFailures=0,saveDelay
  await authPanel.getByLabel('Client secret (vacío conserva el guardado)',{exact:true}).fill('simulated-provider-secret');
  await authPanel.getByLabel('URL pública HTTPS de Parental',{exact:true}).fill('https://preview.local');
  await authPanel.getByLabel('Tu contraseña local para guardar cambios',{exact:true}).fill('simulated-local-password');
- await authPanel.locator('input[type=checkbox]').check();
+ await authPanel.locator('input[type=checkbox]').first().check();assert.equal(await authPanel.locator('input[type=checkbox]').nth(1).isChecked(),false);
  assert.equal(await authPanel.getByLabel('Redirect URI para copiar en Authentik',{exact:true}).inputValue(),'https://preview.local/api/auth/oidc/callback');
  // Saving the avatar must not mark an unsaved identity configuration as clean.
  await page.getByText('Cambiar cara',{exact:true}).click();await page.locator('[data-avatar="face-07"]').click();
