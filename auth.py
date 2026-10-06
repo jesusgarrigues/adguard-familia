@@ -192,7 +192,7 @@ def request_access(user,body,validate):
 def requests_for(user):
     with LOCK:
         DB.execute("UPDATE requests SET status='expired' WHERE status='pending' AND created<?",(time.time()-86400,));DB.commit()
-        rows=[dict(r) for r in DB.execute('SELECT r.*,u.username,u.avatar FROM requests r JOIN users u ON r.user_id=u.id ORDER BY r.id DESC LIMIT 1000')]
+        rows=[dict(r) for r in DB.execute('SELECT r.*,u.username,u.avatar,rv.username AS reviewer_name FROM requests r JOIN users u ON r.user_id=u.id LEFT JOIN users rv ON rv.id=r.reviewer ORDER BY r.id DESC LIMIT 1000')]
         for row in rows:
             row['extend_bedtime']=bool(row['extend_bedtime'])
             row['approved_extend_bedtime']=None if row['approved_extend_bedtime'] is None else bool(row['approved_extend_bedtime'])

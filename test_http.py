@@ -83,6 +83,7 @@ try:
     parent.csrf='invalid';parent.call('me/notifications',config,403);parent.call('me')
     parent.call('request/review',{'id':rid,'decision':'approve','minutes':15})
     granted=child.call('state');assert len(granted['leases'])==1;assert granted['requests'][0]['status']=='approved'
+    assert granted['leases'][0]['granted_by']=='parent' and granted['requests'][0]['reviewer_name']=='parent'
     observer=Client();observer.call('auth/login',{'username':'observer','password':'observer-password-1234'})
     observer.call('cancel',{'client':'iMac de Emma','service':'youtube'},403)
     parent.call('client',{'client':'iMac de Emma','patch':{'parental_enabled':False}},403)
@@ -121,6 +122,8 @@ try:
     assert state['devices'][0]['extra_minutes']==20
     assert state['devices'][0]['effective_bedtime']=='21:00'
     assert state['devices'][0]['last_operation']['confirmation_with_bedtime'] is False
+    assert state['devices'][0]['last_operation']['actor']=='parent'
+    assert next(r for r in child.call('requests')['requests'] if r['id']==native_id)['reviewer_name']=='parent'
     child.call('nintendo/policy',{'client':'nintendo:ABC','patch':{},'revision':'rev','operation_id':secrets.token_hex(16)},403)
     parent.call('nintendo/policy',{'client':'nintendo:ABC','patch':{},'revision':'rev','operation_id':secrets.token_hex(16)},403)
     forty_id=child.call('request',{'client':'nintendo:ABC','service':'@nintendo','minutes':40})['id']
