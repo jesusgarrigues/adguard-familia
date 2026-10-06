@@ -1,0 +1,5 @@
+# Formato comprobado en la CI (ver #86). Por ahora solo app.py; los demás módulos se irán incorporando.
+[tool.black]
+line-length = 120
+skip-string-normalization = true
+target-version = ["py313"]
