@@ -1,0 +1,35 @@
+# Revisión semanal de dependencias (#87). Nada se integra automáticamente: cada PR pasa la CI completa.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Europe/Madrid
+    open-pull-requests-limit: 5
+    labels: [dependencies]
+    groups:
+      # Bibliotecas no oficiales de Nintendo: se revisan juntas y aparte, porque dependen de la API privada de Nintendo.
+      nintendo:
+        patterns: [pynintendoparental, pynintendoauth]
+      python:
+        patterns: ["*"]
+        exclude-patterns: [pynintendoparental, pynintendoauth]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Europe/Madrid
+    labels: [dependencies]
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Europe/Madrid
+    labels: [dependencies]
