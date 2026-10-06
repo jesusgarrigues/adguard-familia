@@ -52,7 +52,7 @@ Los horarios son **pausas** del bloqueo, según AdGuard, no horas de bloqueo. La
 
 ## Avisos
 
-El registro de consultas alimenta la actividad bloqueada y ofrece permisos temporales desde el evento. Los avisos del navegador requieren HTTPS o localhost, permiso y mantener el panel abierto. No hay push con el navegador cerrado ni integración de correo/Telegram.
+El registro de consultas alimenta la actividad bloqueada y ofrece permisos temporales desde el evento. Los avisos requieren HTTPS y permiso. Al activar la suscripción Push en cada dispositivo, Docker puede enviarlos con Parental cerrada. La entrega local sin Push necesita el panel abierto. Los proveedores externos de correo/Telegram siguen pendientes.
 
 Una consulta puede proceder de actividad en segundo plano. Se agrupan avisos por cliente y restricción cada 5 minutos, se leen las últimas 500 consultas cada 10 segundos y se guardan los últimos 500 eventos. Con mucho tráfico o desconexiones pueden perderse eventos. Un cliente excluido del registro no genera avisos. Para avisos de filtrado DNS se desactiva temporalmente el filtrado del cliente completo; no se crea una excepción solo para el dominio del aviso.
 
@@ -120,7 +120,7 @@ Es una app web instalable (PWA), no un paquete APK ni una app de App Store. Publ
 
 En **Ajustes → Instalar Parental** encontrarás el botón de instalación cuando el navegador lo permita o las instrucciones correspondientes. Safari en iPhone no muestra el mismo aviso automático de instalación que Chrome: se ofrece una guía de **Compartir → Añadir a pantalla de inicio**. La recomendación se puede ocultar y no se muestra si la app ya está instalada.
 
-El diseño se adapta al móvil e incluye el nuevo icono de Parental, icono de inicio de iOS de 180 px, variantes de 192/512 px, favicon, manifest y modo independiente. Se conserva el identificador de la PWA. La caché versionada guarda únicamente recursos estáticos públicos (fuentes, estilos, scripts e iconos). No se almacena contenido privado en caché y se muestra una página de desconexión si el servidor no responde. La gestión y las aprobaciones necesitan conexión. Los avisos de nuevas solicitudes y bloqueos requieren permiso del navegador y mantener el panel abierto. No incluye push en segundo plano; el soporte de notificaciones varía en iOS.
+El diseño se adapta al móvil e incluye el nuevo icono de Parental, icono de inicio de iOS de 180 px, variantes de 192/512 px, favicon, manifest y modo independiente. Se conserva el identificador de la PWA. La caché versionada guarda únicamente recursos estáticos públicos (fuentes, estilos, scripts e iconos). No se almacena contenido privado en caché y se muestra una página de desconexión si el servidor no responde. La gestión y las aprobaciones necesitan conexión. Los avisos de nuevas solicitudes y bloqueos usan Web Push cuando se registra el dispositivo; en iPhone se requiere la PWA instalada y permisos. Hay diagnóstico y pruebas diferenciadas de entrega local/desde el servidor.
 
 Para actualizar la imagen sin borrar cuentas ni configuración:
 
@@ -186,3 +186,5 @@ El acceso OIDC con Authentik se configura en **Ajustes → Parental → Acceso e
 ### Avisos selectivos de bloqueos
 
 Configura servicios, protecciones opcionales e intervalos por responsable en Ajustes → Parental → Intentos bloqueados, con personalización por cliente. Al pulsar el aviso se abre la autorización del cliente/servicio concreto. [Guía y diagnóstico](docs/avisos-bloqueos.md). Avisos de navegador con panel abierto; entrega externa con app cerrada sigue pendiente.
+
+Los avisos automáticos ahora usan una bandeja persistente y Web Push desde Docker. Tras actualizar, pulsa **Activar avisos** en cada dispositivo aunque ya tuviera permiso. **Probar desde el servidor** comprueba el canal con el panel cerrado; consulta [activación y diagnóstico](docs/avisos-bloqueos.md).

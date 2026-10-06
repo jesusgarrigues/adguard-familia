@@ -19,6 +19,7 @@ state.requests=requests;
 const user={id:1,username:'admin',avatar:'face-01',role:'admin',clients:[],edit_policy:true,max_minutes:1440};
 let authenticEnabled=false,authenticLinked=false,authenticPending=null;const authenticConfig={enabled:false,issuer:'',discovery_url:'',client_id:'',public_url:'',secret_set:false,callback_url:''};
 const alertPreferences={mode:'all',services:[],protections:[],cooldown_minutes:5,clients:{}};let alertsFailure=false;
+let inboxItems=[],inboxUnread=0,deliveryAccepted=false,deliveryDue=true,deliveryAttempts=0,autoNotifyCalls=0;
 const calls=[];let adguardDown=false,clientFailure=null,readFailures=0,saveDelay=0;
 (async()=>{
  const browser=await chromium.launch({executablePath:process.env.CHROMIUM_EXECUTABLE||['/usr/bin/chromium','/usr/bin/google-chrome','/opt/google/chrome/chrome'].find(fs.existsSync),headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--disable-breakpad','--disable-crash-reporter']});
@@ -30,6 +31,10 @@ const calls=[];let adguardDown=false,clientFailure=null,readFailures=0,saveDelay
    if(url.pathname==='/api/state'&&adguardDown)return route.fulfill({status:502,contentType:'application/json',body:JSON.stringify({error:'AdGuard unavailable fixture'})});
    const path=url.pathname.slice(5);let body=null;
    if(req.method()==='POST'){body=req.postDataJSON();calls.push({path,body});}
+   if(path==='me/alerts/read'){for(const item of inboxItems)if(body.id===null||item.id===body.id)item.read_at=Date.now()/1000;inboxUnread=inboxItems.filter(i=>!i.read_at).length;return route.fulfill({contentType:'application/json',body:'{"ok":true}'});}
+   if(path==='me/alerts/result'){if(body.status==='claim'){deliveryAttempts++;return route.fulfill({contentType:'application/json',body:JSON.stringify({claimed:deliveryDue&&!deliveryAccepted})});}deliveryAccepted=body.status==='accepted';deliveryDue=false;return route.fulfill({contentType:'application/json',body:'{"ok":true}'});}
+   if(path==='me/alerts/device')return route.fulfill({contentType:'application/json',body:'{"ok":true,"push":false}'});
+   if(path==='me/alerts')return route.fulfill({contentType:'application/json',body:JSON.stringify({items:inboxItems,unread:inboxUnread,requests,diagnostic:{push:false},deliveries:deliveryDue&&!deliveryAccepted?inboxItems.filter(i=>!i.read_at):[]})});
    if(path==='state'&&readFailures>0){readFailures--;return route.fulfill({status:502,contentType:'application/json',body:JSON.stringify({error:'No se pudo actualizar el estado de AdGuard.'})});}
    if(path==='client'&&body){
     if(saveDelay)await new Promise(resolve=>setTimeout(resolve,saveDelay));
@@ -370,6 +375,22 @@ const calls=[];let adguardDown=false,clientFailure=null,readFailures=0,saveDelay
  await page.locator('#icon-selector [data-icon="home-assistant"]').click();await page.getByRole('button',{name:'Guardar icono',exact:true}).click();
  await page.locator('#icon-selector').waitFor({state:'detached'});assert.ok(await page.locator('[data-client-card="iMac de Emma"] img[src="/assets/icons/home-assistant.svg"]').isVisible());
  await page.locator('#adguard-dialog-backdrop').getByRole('button',{name:'Cerrar',exact:true}).click();
+ // Automatic delivery is independent of Requests and dirty connection forms.
+ await page.evaluate(()=>{go('server');document.querySelector('#s-url').value='http://unsaved.example:3000';dirty=true;window.ParentalNotifications.state=()=>({enabled:true});window.__autoNotifications=0;window.__acceptAutomatic=false;window.ParentalNotifications.notify=async()=>{window.__autoNotifications++;return window.__acceptAutomatic;};});
+ inboxItems=[{id:902,kind:'blocked',client:'iMac de Martín',service:'youtube',created:Date.now()/1000-660,read_at:null,detail:{domain:'accounts.youtube.com'},target:{kind:'client',client:'iMac de Martín',service:'youtube',alert_id:902}}];inboxUnread=1;deliveryDue=true;deliveryAccepted=false;
+ await page.evaluate(()=>ParentalAlertCenter.poll());
+ assert.equal(await page.evaluate(()=>window.__autoNotifications),1);assert.equal(deliveryAccepted,false);
+ assert.equal(await page.locator('#s-url').inputValue(),'http://unsaved.example:3000');assert.equal(await page.evaluate(()=>dirty),true);
+ deliveryDue=true;await page.evaluate(async()=>{window.__acceptAutomatic=true;await ParentalAlertCenter.poll();});assert.equal(deliveryAccepted,true);
+ assert.equal(await page.evaluate(()=>window.__autoNotifications),2);await page.evaluate(()=>ParentalAlertCenter.poll());assert.equal(await page.evaluate(()=>window.__autoNotifications),2);
+ await page.evaluate(()=>{dirty=false;go('requests');});
+ assert.equal(await page.locator('[data-alert-count]').first().innerText(),'1');
+ await page.evaluate(()=>go('activity'));await page.locator('[data-alert-inbox]').getByRole('button',{name:'Revisar permiso',exact:true}).click();
+ await page.locator('#blocked-authorization').waitFor();await page.waitForFunction(()=>document.querySelector('[data-alert-count]').hidden);assert.equal(await page.locator('#blocked-authorization h2').innerText(),'Permitir YouTube');
+ await page.locator('#blocked-authorization').getByRole('button',{name:'Cerrar',exact:true}).click();
+ for(const width of [320,375,390,430]){await page.setViewportSize({width,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Alerts overflow at '+width);}
+ await page.screenshot({path:shots+'/movil-avisos-no-leidos.png',fullPage:true});
+ await page.evaluate(()=>go('settings'));await page.screenshot({path:shots+'/movil-diagnostico-entrega.png',fullPage:true});
  await page.setViewportSize({width:1440,height:1000});
  await page.evaluate(async()=>{
   token='';for(const n of document.body.children)n.style.display='none';document.body.style.display='block';document.body.style.padding='32px';

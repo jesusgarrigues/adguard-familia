@@ -1,6 +1,6 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
-const badges=[{},{}],navigation=[{setAttribute(key,value){this[key]=value}}];
-const context=vm.createContext({window:{},navigator:{},document:{querySelectorAll:q=>q==='[data-request-count]'?badges:navigation,getElementById:()=>null},console,Date});
+const badges=[{},{}],navigation=[{setAttribute(key,value){this[key]=value}}],alertBadge={},alertNavigation=[{querySelector:()=>alertBadge,setAttribute(key,value){this[key]=value}}],badgeCalls=[];
+const context=vm.createContext({window:{ParentalBadges:{update:(count,account)=>badgeCalls.push({count,account})}},navigator:{},document:{querySelectorAll:q=>q==='[data-request-count]'?badges:q==='.nav[data-page="activity"]'?alertNavigation:navigation,getElementById:()=>null},console,Date,Number});
 vm.runInContext(fs.readFileSync('assets/app-shell.js','utf8'),context);
 const ui=context.window.ParentalUI,now=Date.now()/1000;
 const requests=[
@@ -16,19 +16,28 @@ assert.equal(ui.countPending(requests,{id:4,role:'responsable',clients:[]}),0);
 assert.equal(ui.countPending(requests,null),0);
 assert.equal(ui.countPending(requests,{role:'admin'},now+86401),0);
 ui.setRequests(requests,{id:1,role:'admin'});assert.equal(badges[0].textContent,'2');assert.equal(badges[1].hidden,false);
+ui.setAlerts(3,{id:1,role:'admin'});assert.equal(alertBadge.textContent,'3');assert.equal(badgeCalls.at(-1).count,5);
+ui.setAlerts(0,{id:1,role:'admin'});assert.equal(alertBadge.hidden,true);assert.equal(badgeCalls.at(-1).count,2);
 ui.setRequests(requests,{id:2,role:'solicitante'});assert.equal(badges[0].textContent,'1');
 ui.setRequests([],null);assert.equal(badges[0].hidden,true);assert.equal(navigation[0]['aria-label'],'Solicitudes');
+assert.equal(alertBadge.hidden,true);assert.equal(badgeCalls.at(-1).count,0);
 
 (async()=>{
  const handlers={},storage=new Map(),deleted=[];let offline=false;
  const cache={async put(key,value){storage.set(key,value.clone())},async match(key){return storage.get(key)?.clone()}};
- const sw=vm.createContext({URL,Response,Promise,Set,console,
+ const sw=vm.createContext({URL,URLSearchParams,Response,Promise,Set,console,
   self:{location:{origin:'https://parental.test'},addEventListener:(name,fn)=>handlers[name]=fn,skipWaiting:async()=>{},clients:{claim:async()=>{}}},
   caches:{open:async()=>cache,keys:async()=>['parental-static-old','other-app-cache'],delete:async key=>{deleted.push(key)}},
   fetch:async request=>{if(offline)throw Error('offline');const url=typeof request==='string'?request:request.url;return new Response('public resource '+url)}
  });
  sw.importScripts=(...paths)=>{for(const path of paths)vm.runInContext(fs.readFileSync(path.slice(1),'utf8'),sw);};
  vm.runInContext(fs.readFileSync('sw.js','utf8'),sw);
+ const pushShown=[],pushBadges=[];
+ sw.self.registration={showNotification:async(title,options)=>pushShown.push({title,options})};
+ sw.self.navigator={setAppBadge:async n=>pushBadges.push(n),clearAppBadge:async()=>pushBadges.push(0)};
+ sw.self.clients.matchAll=async()=>[];
+ let pushed;handlers.push({data:{json:()=>({title:'TV · YouTube',body:'Servicio bloqueado',target:{kind:'client',client:'TV',service:'youtube',alert_id:13},badge_count:5})},waitUntil:p=>pushed=p});await pushed;
+ assert.equal(pushShown[0].options.data.target.alert_id,13);assert.deepEqual(pushBadges,[5]);
  let promise;handlers.install({waitUntil:p=>promise=p});await promise;
  assert.ok(storage.has('/apple-touch-icon.png'));assert.ok(storage.has('/assets/parental.css'));
  assert.ok([...storage.keys()].every(key=>!key.startsWith('/api/')&&key!=='/'));

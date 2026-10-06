@@ -16,7 +16,7 @@ jobs:
         with:
           python-version: '3.13'
       - run: pip install -r requirements.txt
-      - run: python -m unittest -v test_app.py test_diagnostics.py test_auth.py test_nintendo.py test_nintendo_routes.py test_oidc.py test_catalog.py test_blocked_alerts.py
+      - run: python -m unittest -v test_app.py test_diagnostics.py test_auth.py test_nintendo.py test_nintendo_routes.py test_oidc.py test_catalog.py test_blocked_alerts.py test_notification_center.py
       - run: python test_http.py
       - uses: actions/setup-node@v4
         with:
@@ -36,6 +36,7 @@ jobs:
           node --check assets/appearance-catalog.js
           node --check assets/authentik.js
           node --check assets/blocked-notifications.js
+          node --check assets/notification-center.js
           node --check assets/notifications.js
           node --check assets/notification-targets.js
           node --check assets/app-badges.js
@@ -44,6 +45,7 @@ jobs:
           node test_ui.cjs
           node test_pwa.cjs
           node test_notifications.cjs
+          node test_notification_pipeline.cjs
           node test_badges_targets.cjs
       - name: Verify desktop and mobile controls in a browser
         run: |

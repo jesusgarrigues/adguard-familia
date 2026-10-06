@@ -7,7 +7,7 @@
     if (cls) node.className = cls;
     return node;
   };
-  let callbacks = {}, user = null, requests = [], deferredInstall = null;
+  let callbacks = {}, user = null, requests = [], deferredInstall = null, unread=0;
   const displayMode = window.matchMedia?.('(display-mode: standalone)');
   const installed = () => !!(navigator.standalone || displayMode?.matches);
   const ios = () => /iPad|iPhone|iPod/.test(navigator.userAgent) ||
@@ -22,7 +22,13 @@
   };
   function updateBadges() {
     const count = countPending(requests, user);
-    window.ParentalBadges?.update(count,user);
+    window.ParentalBadges?.update(count+unread,user);
+    for(const nav of document.querySelectorAll('.nav[data-page="activity"]')){
+      let badge=nav.querySelector('[data-alert-count]');
+      if(!badge){badge=make('span','','request-count');badge.dataset.alertCount='';nav.append(badge);}
+      badge.textContent=unread>99?'99+':String(unread);badge.hidden=!unread;
+      nav.setAttribute('aria-label',unread?'Avisos, '+unread+' sin leer':'Avisos');
+    }
     for (const badge of document.querySelectorAll('[data-request-count]')) {
       badge.textContent = count > 99 ? '99+' : String(count);
       badge.hidden = !count;
@@ -34,6 +40,7 @@
     if (summary) summary.textContent = count ? count + (count === 1 ? ' pendiente' : ' pendientes') : 'Sin solicitudes pendientes';
   }
   function setView(view, account) {
+    if(!account||user?.id!==account.id)unread=0;
     user = account;
     document.body.dataset.page = view;
     document.body.classList.toggle('signed-in', !!account);
@@ -47,10 +54,12 @@
     updateBadges();
   }
   function setRequests(items, account) {
+    if(!account||user?.id!==account.id)unread=0;
     requests = Array.isArray(items) ? items : [];
     user = account;
     updateBadges();
   }
+  function setAlerts(count,account){if(!account||user?.id!==account.id)unread=0;else unread=Number.isSafeInteger(count)&&count>0?count:0;updateBadges();}
   function showInstallGuide() {
     const previous = document.activeElement;
     if (document.getElementById('install-dialog')) return;
@@ -156,5 +165,5 @@
     updateInstallBanner();
     setInterval(updateBadges, 10000);
   }
-  window.ParentalUI = {init, setView, setRequests, countPending, renderSettings, showInstallGuide};
+  window.ParentalUI = {init, setView, setRequests, setAlerts, countPending, renderSettings, showInstallGuide};
 })();

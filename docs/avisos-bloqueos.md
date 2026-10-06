@@ -26,6 +26,27 @@ En **Ajustes → Integraciones → AdGuard Home → Conexión → Diagnóstico**
 
 Si no aparece un intento, comprueba en el registro de AdGuard que la consulta llega desde ese dispositivo y que el cliente no está excluido del registro. Caché DNS, otro resolutor o DNS cifrado pueden impedir nuevas consultas visibles en AdGuard. Una consulta no demuestra que alguien estuviera viendo contenido.
 
-## Entrega
+## Entrega automática y diagnóstico
 
-Esta versión entrega avisos de navegador mientras el panel está abierto. No incorpora Push ni proveedores externos con Parental cerrado: esos destinos se siguen en #48. La prueba del navegador y Chromium móvil no sustituye la comprobación real en Safari/iPhone o Android.
+Los avisos nuevos elegibles se guardan en una bandeja por usuario en el servidor. Actividad conserva el registro DNS completo; Avisos contiene los intentos seleccionados por preferencias. Las solicitudes tienen su propio contador. Una consulta repetida no crea una solicitud ni aumenta continuamente el contador.
+
+La ventana de 120 segundos se usa al **recoger una consulta nueva de AdGuard**, no para borrar un aviso ya pendiente. Después de recogerlo se conserva en la bandeja durante 30 días, hasta leerlo. No se importan todos los eventos históricos al actualizar. Los envíos pendientes se intentan durante una hora y tienen un máximo de cinco intentos con espera creciente; leer el aviso, resolver su solicitud o cambiar su ámbito cancela el envío. Recibir un aviso nunca concede un permiso.
+
+El contador de Avisos muestra bloqueos no leídos. El icono instalado suma ese número y las solicitudes pendientes, cuando el sistema permite Badging API. Leer una solicitud no la resuelve y no reduce su contador de pendientes. Al pulsar un aviso se abre su autorización o solicitud concreta; la sesión y los roles siguen siendo obligatorios. Marcar todos como leídos no aprueba nada. Otros dispositivos actualizan su contador al volver a abrir o recibir un nuevo Push; no se envía Push silencioso solo para cambiar números.
+
+### Activar el envío desde Docker
+
+1. Actualiza el contenedor y abre Parental mediante HTTPS. En iPhone usa la app añadida a pantalla de inicio (iOS 16.4 o posterior).
+2. En Ajustes → Parental → Avisos del navegador, pulsa **Activar avisos**, incluso si ya diste permiso en una versión anterior. Ahora registra la suscripción Push de este dispositivo.
+3. **Probar aviso** comprueba la entrega local del navegador. **Probar desde el servidor** pone un mensaje en la cola de Docker con unos 10 segundos de espera: puedes poner Parental en segundo plano para verificarlo.
+4. Consulta el estado de envío en ese mismo bloque. «Aceptado» significa que el navegador/proveedor aceptó el mensaje; el sistema puede agruparlo o silenciarlo por sus ajustes de notificaciones/concentración.
+
+El servidor envía Web Push cifrado con VAPID mediante Apple, Google o Mozilla; no hace falta una app nativa propia ni cuenta de desarrollador Apple. El contenedor necesita acceso HTTPS saliente a `web.push.apple.com`, `fcm.googleapis.com` o `updates.push.services.mozilla.com`, según el navegador. Si un firewall bloquea esas conexiones se informa el fallo y se reintenta. No se aceptan URLs Push arbitrarias o de la red privada y no se siguen redirecciones.
+
+La clave privada se genera una sola vez en `/data/web-push.pem` con permisos 0600. Conserva el volumen de datos para mantener suscripciones, cuentas y avisos. Opcionalmente configura `WEB_PUSH_CONTACT=mailto:tu-correo@tu-dominio` como contacto VAPID en el entorno del contenedor. No compartas la clave privada ni los endpoints y claves de una suscripción.
+
+Cerrar sesión desactiva los avisos de ese dispositivo; vuelve a activarlos después de entrar. Si caduca una suscripción, se indica en diagnóstico y Activar avisos puede renovarla. Sin Push registrado, el panel abierto comprueba pendientes en todas las pantallas sin tocar formularios sin guardar. Si falla la entrega, no se considera enviado automáticamente.
+
+Los diagnósticos por usuario distinguen servicios no seleccionados, consultas anteriores al cambio de preferencias, cooldown, consultas antiguas/fechas futuras y el último estado de entrega. El intervalo entre avisos y los bloqueos genéricos opcionales siguen en Ajustes → Intentos bloqueados.
+
+Web Push no sustituye a los proveedores externos de #48 ni a aprobar/editar directamente desde notificaciones de #50; esos alcances continúan pendientes. El clic del Push lleva a la pantalla de aprobación en Parental. Las pruebas automatizadas no sustituyen la prueba en el iPhone/Android real del usuario.
