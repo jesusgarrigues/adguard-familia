@@ -1282,11 +1282,18 @@ class Handler(BaseHTTPRequestHandler):
                     return self.respond(200, public_server())
                 if self.path == '/api/users':
                     linked = {r['user_id'] for r in auth.DB.execute('SELECT user_id FROM external_identities')}
+                    pending = auth.pending_signups()
                     return self.respond(
                         200,
                         {
                             'users': [
-                                dict(auth.public(r), authentik_linked=r['id'] in linked)
+                                dict(
+                                    auth.public(r),
+                                    authentik_linked=r['id'] in linked,
+                                    signup_pending=r['id'] in pending,
+                                    signup_created=pending.get(r['id']),
+                                    has_password=bool(r['password']),
+                                )
                                 for r in auth.DB.execute('SELECT * FROM users')
                             ]
                         },
@@ -1436,6 +1443,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(404, {'error': 'No encontrado'})
             if self.path == '/api/users':
                 return self.respond(200, {'user': auth.save_user(user, body)})
+            if self.path == '/api/users/signup/reject':
+                return self.respond(200, auth.reject_signup(user, body))
             if self.path in ('/api/global', '/api/server', '/api/server/test', '/api/client/add'):
                 auth.require(user, 'admin')
             if self.path == '/api/server/test':

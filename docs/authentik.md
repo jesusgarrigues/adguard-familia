@@ -48,7 +48,18 @@ Para no tener que vincular desde Mi perfil, el administrador puede indicar el **
 - El ID token trae `email_verified: true`. Desde Authentik 2025.10 el mapeo por defecto envía `false`; puedes crear un scope mapping propio que devuelva `true` para usuarios que vienen de Google.
 - O el administrador activa **Confiar en el correo de Authentik** en la configuración. Hazlo solo si controlas tu Authentik y quién puede cambiar su correo en él.
 
-No se enlaza si el correo coincide con varias cuentas o con una cuenta desactivada, ni si esa cuenta ya tiene otra identidad. Cada enlace automático queda en el Registro de cambios. La vinculación manual desde Mi perfil sigue disponible.
+No se enlaza si el correo coincide con varias cuentas o con una cuenta desactivada, ni si esa cuenta ya tiene otra identidad. Si la persona entró antes de que pusieras su correo y quedó como alta pendiente, al volver a entrar se enlaza con su cuenta y la alta pendiente se elimina. Cada enlace automático queda en el Registro de cambios. La vinculación manual desde Mi perfil sigue disponible.
+
+## Altas pendientes de aprobación
+
+Si alguien entra con Authentik y no hay ninguna cuenta con la que enlazarle, Parental crea una cuenta **desactivada y sin dispositivos** con su nombre y correo de Authentik, y le indica que está pendiente de aprobación. No obtiene sesión ni acceso a nada.
+
+Los administradores reciben un aviso «Nueva cuenta pendiente» (Web Push y bandeja) que abre **Usuarios y roles**. Allí aparece en **Altas pendientes de aprobación**:
+
+- **Revisar y activar**: elige rol, dispositivos y límites, deja marcada **Cuenta activa** y guarda. La persona ya puede entrar con Authentik. No necesita contraseña local; puedes ponerle una si quieres que también pueda entrar sin Authentik.
+- **Rechazar**: elimina la cuenta pendiente y su vínculo. Si vuelve a entrar, se crea una nueva solicitud.
+
+Repetir el acceso no crea solicitudes duplicadas, hay un máximo de 20 altas pendientes y una cuenta ya aprobada y desactivada después nunca se reabre por esta vía.
 
 ## Recuperación y sesiones
 

@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import threading
 import time
@@ -296,7 +297,8 @@ class Connector:
             if not row:
                 row = self._auto_link(identity, cfg)
             if not row:
-                raise OIDCError('Esta identidad no está vinculada a una cuenta activa. Entra con tu contraseña local y vincúlala desde Mi perfil')
+                self._signup(identity)
+                raise OIDCError('Tu cuenta está pendiente de aprobación. El administrador ha recibido la solicitud; podrás entrar cuando la active.')
             token, csrf, user = auth.issue_session(row, 'authentik', identity['issuer'], identity['subject'])
             return {'target': flow['target'], 'token': token, 'csrf': csrf, 'user': user, 'link': False}
 
@@ -308,15 +310,49 @@ class Connector:
         """
         if not identity.get('email') or not (identity.get('email_verified') or cfg.get('trust_email')):
             return None
-        if auth.DB.execute('SELECT 1 FROM external_identities WHERE issuer=? AND subject=?', (identity['issuer'], identity['subject'])).fetchone():
+        linked = auth.DB.execute('SELECT user_id FROM external_identities WHERE issuer=? AND subject=?', (identity['issuer'], identity['subject'])).fetchone()
+        pending = linked and auth.DB.execute('SELECT 1 FROM signups WHERE user_id=?', (linked['user_id'],)).fetchone()
+        if linked and not pending:
             return None  # Linked to a deactivated account: never move it to another one.
         rows = auth.DB.execute("SELECT * FROM users WHERE lower(email)=? AND email!='' AND active=1", (identity['email'],)).fetchall()
         if len(rows) != 1 or auth.DB.execute('SELECT 1 FROM external_identities WHERE user_id=?', (rows[0]['id'],)).fetchone():
             return None
+        if pending:
+            # The admin has since given the real account this e-mail: drop the unapproved sign-up (#98).
+            for table in ('signups', 'external_identities', 'sessions', 'oidc_flows'):
+                auth.DB.execute('DELETE FROM ' + table + ' WHERE user_id=?', (linked['user_id'],))
+            auth.DB.execute('DELETE FROM users WHERE id=? AND active=0', (linked['user_id'],))
         auth.DB.execute('INSERT INTO external_identities VALUES(?,?,?,?,?)', (rows[0]['id'], identity['issuer'], identity['subject'], identity['label'], time.time()))
         auth.DB.commit()
         auth.audit(auth.public(rows[0]), 'authentik_auto_linked', {'user_id': rows[0]['id'], 'verified': identity['email_verified']})
         return rows[0]
+
+    def _signup(self, identity):
+        """Unknown identity: create one inactive, SSO-only account awaiting an administrator (#98).
+
+        It has no role privileges until approved, never gets a session while pending, and repeated logins
+        reuse the same request. A deactivated account that was approved before is never reopened here.
+        """
+        linked = auth.DB.execute('SELECT user_id FROM external_identities WHERE issuer=? AND subject=?', (identity['issuer'], identity['subject'])).fetchone()
+        if linked:
+            if auth.DB.execute('SELECT 1 FROM signups WHERE user_id=?', (linked['user_id'],)).fetchone():
+                return
+            raise OIDCError('Esta identidad pertenece a una cuenta desactivada. Contacta con el administrador')
+        if auth.DB.execute('SELECT count(*) FROM signups').fetchone()[0] >= 20:
+            raise OIDCError('Hay demasiadas altas pendientes. Pide al administrador que revise las solicitudes')
+        base = re.sub(r'[^a-z0-9._-]+', '-', identity['label'].lower()).strip('-._')[:40] or 'authentik'
+        name, n = base, 1
+        while auth.DB.execute('SELECT 1 FROM users WHERE username=?', (name,)).fetchone():
+            n += 1
+            name = f'{base}-{n}'
+        email = identity.get('email', '')
+        if email and auth.DB.execute('SELECT 1 FROM users WHERE lower(email)=?', (email,)).fetchone():
+            email = ''  # Never duplicate an e-mail that already belongs to another account.
+        uid = auth.DB.execute("INSERT INTO users(username,password,role,clients,edit_policy,max_minutes,active,avatar,email) VALUES(?,NULL,'solicitante','[]',0,120,0,'',?)", (name, email)).lastrowid
+        auth.DB.execute('INSERT INTO external_identities VALUES(?,?,?,?,?)', (uid, identity['issuer'], identity['subject'], identity['label'], time.time()))
+        auth.DB.execute('INSERT INTO signups VALUES(?,?)', (uid, time.time()))
+        auth.DB.commit()
+        auth.audit(None, 'signup_requested', {'id': uid, 'username': name})
 
     def status(self, actor, session_token='', binding=''):
         cfg = self.config()
