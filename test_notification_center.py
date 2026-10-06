@@ -156,6 +156,19 @@ class CenterTests(unittest.TestCase):
         self.center.dispatch();self.assertEqual(len(self.sent),1)
         with self.assertRaises(ValueError):self.center.register(self.parent,{'device':'device-zzzzzzzzzzzzzzzz','subscription':sub})
 
+    def test_pending_signup_notifies_admins_only_until_resolved(self):
+        self.now+=10
+        uid=auth.DB.execute("INSERT INTO users(username,password,role,clients,edit_policy,max_minutes,active,avatar,email) VALUES('nueva',NULL,'solicitante','[]',0,120,0,'','')").lastrowid
+        auth.DB.execute('INSERT INTO signups VALUES(?,?)',(uid,self.now));auth.DB.commit()
+        self.center.register(self.admin,{'device':self.device,'subscription':self.sub()})
+        parent_device='device-parent-123456789'
+        self.center.register(self.parent,{'device':parent_device,'subscription':self.sub('https://fcm.googleapis.com/wp/parent')})
+        self.center.sync([]);self.center.dispatch()
+        self.assertEqual(len(self.sent),1);self.assertIn('nueva',self.sent[0]['title']);self.assertEqual(self.sent[0]['target']['kind'],'users')
+        self.assertEqual(self.center.snapshot(self.parent,parent_device)['items'],[])
+        auth.DB.execute('DELETE FROM signups WHERE user_id=?',(uid,));auth.DB.commit()
+        self.center.sync([]);self.assertFalse(self.center.current(self.admin,self.center.snapshot(self.admin)['items'][0]|{'detail':json.dumps({'user_id':uid})}))
+
     def test_real_encryption_vapid_and_redirects_disabled(self):
         try:import requests, pywebpush
         except ImportError:self.skipTest('requests installed in CI')

@@ -122,11 +122,15 @@ class Center:
         return auth.public(row) if row else None
 
     def visible(self, user, item):
+        if item['kind'] == 'signup':  # New-account requests are for administrators only (#98).
+            return bool(user and user['role'] == 'admin')
         return bool(user and user['role'] in ('admin', 'responsable') and (item['kind']=='test' or user['role'] == 'admin' or item['client'] in user['clients']))
 
     def current(self, user, item):
         if not self.visible(user, item): return False
         if item['kind']=='test': return True
+        if item['kind'] == 'signup':
+            return bool(auth.DB.execute('SELECT 1 FROM signups WHERE user_id=?', (json.loads(item['detail'])['user_id'],)).fetchone())
         if item['kind'] == 'request':
             rid = json.loads(item['detail'])['request_id']
             row = auth.DB.execute("SELECT status,created,client FROM requests WHERE id=?", (rid,)).fetchone()
@@ -153,6 +157,10 @@ class Center:
                         continue
                     source = 'block:' + hashlib.sha256(json.dumps([event[k] for k in ('time','client','service','domain')], ensure_ascii=False).encode()).hexdigest()
                     made += self.insert(user, source, 'blocked', event['client'], event['service'], event['time'], {'domain': event['domain']})
+                if user['role'] == 'admin':
+                    for row in auth.DB.execute('SELECT s.user_id,s.created,u.username FROM signups s JOIN users u ON u.id=s.user_id').fetchall():
+                        if row['created'] >= self.started:
+                            made += self.insert(user, 'signup:'+str(row['user_id']), 'signup', '', '', row['created'], {'user_id':row['user_id'],'username':row['username']})
                 for request in auth.requests_for(user):
                     if request['status'] == 'pending' and request['created'] >= self.started:
                         made += self.insert(user, 'request:'+str(request['id']), 'request', request['client'], request['service'], request['created'], {'request_id':request['id'],'username':request['username'],'minutes':request['minutes']})
@@ -231,7 +239,7 @@ class Center:
 
     def public(self, item):
         detail = json.loads(item['detail'])
-        target = {'kind':'request','id':detail['request_id']} if item['kind']=='request' else {'kind':'client','client':item['client'],'service':item['service']}
+        target = {'kind':'request','id':detail['request_id']} if item['kind']=='request' else {'kind':'users'} if item['kind']=='signup' else {'kind':'client','client':item['client'],'service':item['service']}
         target['alert_id'] = item['id']
         if item['kind']=='test': target=None
         return {k:item[k] for k in ('id','kind','client','service','created','read_at')} | {'detail':detail,'target':target}
@@ -275,6 +283,7 @@ class Center:
         title = 'Nueva solicitud de '+value['detail']['username'] if item['kind']=='request' else item['client']+' · '+item['service']
         body = item['client']+' · '+str(value['detail']['minutes'])+' minutos' if item['kind']=='request' else 'Servicio bloqueado. Pulsa para revisar y autorizar tiempo.'
         if item['kind']=='test': title,body='Parental · Prueba desde el servidor','Este aviso se ha enviado desde Docker mediante Web Push.'
+        if item['kind']=='signup': title,body='Nueva cuenta pendiente: '+value['detail']['username'],'Ha entrado con Authentik. Revísala en Usuarios y roles para activarla o rechazarla.'
         return {'title':title,'body':body,'target':value['target'],'tag':'parental-alert-'+str(item['id']),'badge_count':self.snapshot(user)['badge']}
 
     def test(self, user, body):

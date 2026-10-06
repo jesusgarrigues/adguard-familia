@@ -83,15 +83,17 @@ class OIDCTests(unittest.TestCase):
 
     def test_name_or_email_match_never_links_automatically(self):
         state,binding,_=self.start(link=False)
-        with self.assertRaisesRegex(oidc.OIDCError,'no está vinculada'):self.conn.callback(state,'code',binding)
-        self.assertEqual(auth.DB.execute('SELECT count(*) FROM external_identities').fetchone()[0],0)
-        self.assertEqual(auth.DB.execute('SELECT count(*) FROM users').fetchone()[0],3)
+        with self.assertRaisesRegex(oidc.OIDCError,'pendiente de aprobación'):self.conn.callback(state,'code',binding)
+        # Same username "emma" and an unverified e-mail: a separate pending account, never Emma's.
+        self.assertFalse(auth.DB.execute('SELECT 1 FROM external_identities WHERE user_id=?',(self.child['id'],)).fetchone())
+        pending=auth.DB.execute('SELECT u.* FROM users u JOIN signups s ON s.user_id=u.id').fetchall()
+        self.assertEqual(len(pending),1);self.assertEqual(pending[0]['username'],'emma-2');self.assertFalse(pending[0]['active'])
 
     def test_first_login_links_by_verified_email_only(self):
         auth.save_user(self.admin,{'id':self.child['id'],'email':'Emma@Example.test'})
         state,binding,query=self.start(link=False)
         self.assertIn('email',query['scope'][0].split())
-        with self.assertRaisesRegex(oidc.OIDCError,'no está vinculada'):self.conn.callback(state,'code',binding)  # email_verified missing
+        with self.assertRaisesRegex(oidc.OIDCError,'pendiente'):self.conn.callback(state,'code',binding)  # email_verified missing
         self.override={'email_verified':'true'}  # Only a JSON true counts.
         state,binding,_=self.start(link=False)
         with self.assertRaises(oidc.OIDCError):self.conn.callback(state,'code',binding)
@@ -100,6 +102,7 @@ class OIDCTests(unittest.TestCase):
         self.assertEqual(result['user']['id'],self.child['id'])
         self.assertEqual(auth.DB.execute('SELECT user_id FROM external_identities WHERE subject=?',(self.sub,)).fetchone()[0],self.child['id'])
         self.assertTrue(auth.DB.execute("SELECT 1 FROM audit WHERE action='authentik_auto_linked'").fetchone())
+        self.assertEqual(auth.pending_signups(),{})  # The earlier unverified attempt's pending sign-up is cleaned up.
 
     def test_trusted_authentik_email_links_unverified_but_never_by_name(self):
         auth.save_user(self.admin,{'id':self.child['id'],'email':'emma@example.test'})
@@ -120,13 +123,50 @@ class OIDCTests(unittest.TestCase):
         auth.save_user(self.admin,{'id':self.other['id'],'email':'martin@example.test','active':False})
         self.override={'email':'martin@example.test'};self.sub='third-identity';state,binding,_=self.start(link=False)
         with self.assertRaises(oidc.OIDCError):self.conn.callback(state,'code',binding)
-        self.assertEqual(auth.DB.execute('SELECT count(*) FROM external_identities').fetchone()[0],1)
+        self.assertEqual(auth.DB.execute('SELECT count(*) FROM external_identities e JOIN users u ON u.id=e.user_id WHERE u.active=1').fetchone()[0],1)
+        self.assertNotIn(self.other['id'],[r[0] for r in auth.DB.execute('SELECT user_id FROM external_identities')])
 
     def test_user_email_is_validated_and_unique(self):
         auth.save_user(self.admin,{'id':self.child['id'],'email':'emma@example.test'})
         with self.assertRaisesRegex(ValueError,'otra cuenta'):auth.save_user(self.admin,{'id':self.other['id'],'email':'EMMA@example.test'})
         with self.assertRaisesRegex(ValueError,'Correo'):auth.save_user(self.admin,{'id':self.other['id'],'email':'no-es-correo'})
         self.assertEqual(auth.save_user(self.admin,{'id':self.other['id'],'email':''})['email'],'')
+
+    def test_unknown_identity_waits_for_admin_and_cannot_enter(self):
+        self.sub='google-newcomer';self.override={'preferred_username':'Lucía Pérez','email':'lucia@example.test'}
+        for _ in range(2):  # Repeated logins reuse the same pending request.
+            state,binding,_=self.start(link=False)
+            with self.assertRaisesRegex(oidc.OIDCError,'pendiente de aprobación'):self.conn.callback(state,'code',binding)
+        rows=auth.DB.execute('SELECT u.* FROM users u JOIN signups s ON s.user_id=u.id').fetchall()
+        self.assertEqual(len(rows),1);pending=rows[0]
+        self.assertEqual((pending['username'],pending['email'],pending['active'],pending['password']),('luc-a-p-rez','lucia@example.test',0,None))
+        with self.assertRaises(auth.Forbidden):auth.login('luc-a-p-rez','',ip='test')
+        with self.assertRaises(auth.Forbidden):auth.reject_signup(self.child,{'id':pending['id']})
+        # Approval: the admin picks a role and activates; no local password is needed for an SSO-only account.
+        approved=auth.save_user(self.admin,{'id':pending['id'],'role':'responsable','clients':['Emma'],'active':True})
+        self.assertTrue(approved['active']);self.assertEqual(auth.pending_signups(),{})
+        state,binding,_=self.start(link=False);result=self.conn.callback(state,'code',binding)
+        self.assertEqual(result['user']['id'],pending['id']);self.assertEqual(result['user']['role'],'responsable')
+        with self.assertRaises(auth.Forbidden):auth.login('luc-a-p-rez','any-password-123',ip='test')
+
+    def test_rejected_signup_is_removed_and_can_ask_again(self):
+        self.sub='stranger'
+        state,binding,_=self.start(link=False)
+        with self.assertRaises(oidc.OIDCError):self.conn.callback(state,'code',binding)
+        uid=auth.DB.execute('SELECT user_id FROM signups').fetchone()[0]
+        auth.reject_signup(self.admin,{'id':uid})
+        self.assertFalse(auth.DB.execute('SELECT 1 FROM users WHERE id=?',(uid,)).fetchone())
+        self.assertFalse(auth.DB.execute('SELECT 1 FROM external_identities WHERE subject=?',('stranger',)).fetchone())
+        with self.assertRaises(ValueError):auth.reject_signup(self.admin,{'id':uid})
+        state,binding,_=self.start(link=False)
+        with self.assertRaises(oidc.OIDCError):self.conn.callback(state,'code',binding)
+        self.assertEqual(len(auth.pending_signups()),1)
+
+    def test_deactivated_account_is_not_reopened_as_signup(self):
+        self.link();auth.save_user(self.admin,{'id':self.child['id'],'active':False})
+        state,binding,_=self.start(link=False)
+        with self.assertRaisesRegex(oidc.OIDCError,'desactivada'):self.conn.callback(state,'code',binding)
+        self.assertEqual(auth.pending_signups(),{})
 
     def test_replay_other_browser_and_expiry(self):
         state,binding,_=self.start(link=False)

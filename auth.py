@@ -32,6 +32,7 @@ def init(folder):
     for name in ('auth_provider','auth_issuer','auth_subject'):
         if name not in session_columns: DB.execute('ALTER TABLE sessions ADD COLUMN '+name+" TEXT NOT NULL DEFAULT ''")
     DB.executescript('''CREATE TABLE IF NOT EXISTS external_identities(user_id INTEGER PRIMARY KEY, issuer TEXT NOT NULL, subject TEXT NOT NULL, label TEXT NOT NULL, linked REAL NOT NULL, UNIQUE(issuer,subject));
+    CREATE TABLE IF NOT EXISTS signups(user_id INTEGER PRIMARY KEY, created REAL NOT NULL);
     CREATE TABLE IF NOT EXISTS oidc_flows(state TEXT PRIMARY KEY, binding TEXT NOT NULL, kind TEXT NOT NULL, user_id INTEGER, session_hash TEXT, nonce TEXT NOT NULL, verifier TEXT NOT NULL, revision TEXT NOT NULL, expires REAL NOT NULL, target TEXT NOT NULL, identity TEXT NOT NULL DEFAULT '{}');''')
     DB.commit()
 
@@ -94,15 +95,34 @@ def save_user(actor,body,bootstrap=False):
         if old and old['role']=='admin' and old['active'] and (role!='admin' or not active):
             if DB.execute("SELECT count(*) FROM users WHERE role='admin' AND active=1").fetchone()[0]<=1: raise ValueError('Debe permanecer al menos un administrador activo')
         pwd=password_hash(body['password']) if body.get('password') else old['password'] if old else None
-        if not pwd: raise ValueError('Contraseña obligatoria')
+        # Accounts created by an Authentik sign-up (#98) may stay SSO-only until the admin sets a password.
+        if not pwd and not (old and DB.execute('SELECT 1 FROM external_identities WHERE user_id=?',(uid,)).fetchone()): raise ValueError('Contraseña obligatoria')
         try:
             if old: DB.execute('UPDATE users SET username=?,password=?,role=?,clients=?,edit_policy=?,max_minutes=?,active=?,avatar=?,email=? WHERE id=?',(name,pwd,role,json.dumps(clients),int(edit),duration,int(active),avatar,email,uid))
             else: uid=DB.execute('INSERT INTO users(username,password,role,clients,edit_policy,max_minutes,active,avatar,email) VALUES(?,?,?,?,?,?,?,?,?)',(name,pwd,role,json.dumps(clients),int(edit),duration,int(active),avatar,email)).lastrowid
         except sqlite3.IntegrityError: raise ValueError('Ese nombre de usuario ya existe')
         if old and (name!=old['username'] or pwd!=old['password'] or role!=old['role'] or clients!=json.loads(old['clients']) or edit!=bool(old['edit_policy']) or duration!=old['max_minutes'] or active!=bool(old['active'])):
             DB.execute('DELETE FROM sessions WHERE user_id=?',(uid,))
+        if active and DB.execute('DELETE FROM signups WHERE user_id=?',(uid,)).rowcount: audit(actor,'signup_approved',{'id':uid,'role':role})
         DB.commit();audit(actor,'user_saved',{'id':uid,'role':role,'clients':clients,'active':active})
         return public(DB.execute('SELECT * FROM users WHERE id=?',(uid,)).fetchone())
+
+
+def pending_signups():
+    return {row['user_id']:row['created'] for row in DB.execute('SELECT * FROM signups')}
+
+
+def reject_signup(actor,body):
+    """Remove a pending Authentik sign-up and its identity, so the person can ask again later (#98)."""
+    require(actor,'admin')
+    uid=body.get('id')
+    if type(uid) is not int: raise ValueError('Alta inválida')
+    with LOCK:
+        if not DB.execute('SELECT 1 FROM signups WHERE user_id=?',(uid,)).fetchone(): raise ValueError('Esta alta ya no está pendiente')
+        for table in ('signups','external_identities','sessions','oidc_flows'): DB.execute('DELETE FROM '+table+' WHERE user_id=?',(uid,))
+        DB.execute('DELETE FROM users WHERE id=? AND active=0',(uid,));DB.commit()
+        audit(actor,'signup_rejected',{'id':uid})
+    return {'ok':True}
 
 
 def save_avatar(actor,body):
@@ -127,7 +147,7 @@ def login(username,password,ip):
         attempt=DB.execute('SELECT * FROM attempts WHERE key=?',(key,)).fetchone()
         if attempt and attempt['until']>now and attempt['count']>=5: raise Forbidden('Demasiados intentos. Espera 15 minutos')
         row=DB.execute('SELECT * FROM users WHERE username=?',(username.strip().lower(),)).fetchone()
-        if not row or not row['active'] or not verify(password,row['password']):
+        if not row or not row['active'] or not row['password'] or not verify(password,row['password']):
             count=attempt['count']+1 if attempt and attempt['until']>now else 1
             DB.execute('INSERT OR REPLACE INTO attempts VALUES(?,?,?)',(key,count,now+900));DB.commit();raise Forbidden('Credenciales incorrectas')
         DB.execute('DELETE FROM attempts WHERE key=?',(key,));DB.execute('DELETE FROM sessions WHERE expires<?',(now,))

@@ -63,7 +63,7 @@ const calls=[];let adguardDown=false,clientFailure=null,readFailures=0,saveDelay
     native.devices[0].last_operation={...previous,operation_id:body.operation_id,status:'superseded',message:'Seguimiento cerrado sin reenviar tiempo.'};
     return route.fulfill({contentType:'application/json',body:JSON.stringify(native.devices[0].last_operation)});
    }
-   const data=path==='me'?{user,csrf:'fixture-csrf'}:path==='state'?state:path==='nintendo/state'?native:path==='requests'?{requests}:path==='auth/status'?{configured:true}:path==='nintendo/config'?{configured:true,timezone:'Europe/Madrid'}:path==='server'?{url:'http://192.168.1.2:3000',username:'admin',demo:true}:path==='diagnostics'?{entries:[]}:path==='users'?{users:[user]}:path==='devices'?{devices:clients.map(c=>({key:c.name,name:c.name,provider:'adguard'}))}:body?{ok:true,status:['permit','cancel','nintendo/policy'].includes(path)?'confirmed':undefined}:{ok:true};
+   const data=path==='me'?{user,csrf:'fixture-csrf'}:path==='state'?state:path==='nintendo/state'?native:path==='requests'?{requests}:path==='auth/status'?{configured:true}:path==='nintendo/config'?{configured:true,timezone:'Europe/Madrid'}:path==='server'?{url:'http://192.168.1.2:3000',username:'admin',demo:true}:path==='diagnostics'?{entries:[]}:path==='users'?{users:[user,{id:9,username:'lucia',email:'lucia@example.test',role:'solicitante',clients:[],edit_policy:false,max_minutes:120,active:false,avatar:'',authentik_linked:true,signup_pending:true,signup_created:Date.now()/1000,has_password:false}]}:path==='devices'?{devices:clients.map(c=>({key:c.name,name:c.name,provider:'adguard'}))}:body?{ok:true,status:['permit','cancel','nintendo/policy'].includes(path)?'confirmed':undefined}:{ok:true};
    return route.fulfill({contentType:'application/json',body:JSON.stringify(data)});
   }
   if(url.pathname==='/')return route.fulfill({contentType:'text/html',headers:{'Content-Security-Policy':csp},body:fs.readFileSync(root+'/index.html','utf8')});
@@ -406,6 +406,8 @@ const calls=[];let adguardDown=false,clientFailure=null,readFailures=0,saveDelay
   await Promise.all([...board.querySelectorAll('img')].map(img=>img.complete?(img.naturalWidth?Promise.resolve():Promise.reject(Error(img.src))):new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=()=>reject(Error(img.src))})));
  });
  await page.screenshot({path:shots+'/parental-catalogo-completo.png',fullPage:true});
+ {const users=await context.newPage();users.setDefaultTimeout(10000);users.on('pageerror',e=>errors.push(e.message));await users.goto(page.url().split('?')[0]+'?view=users');await users.getByText('Altas pendientes de aprobación').waitFor();assert.equal(await users.getByText('Crear o editar cuenta').count(),1);
+  await users.getByRole('button',{name:'Revisar y activar'}).click();assert.equal(await users.locator('#u-name').inputValue(),'lucia');assert.equal(await users.locator('#u-email').inputValue(),'lucia@example.test');assert.equal(await users.locator('#u-active').isChecked(),true);await users.close();}
  assert.deepEqual(errors,[]);
  console.log(JSON.stringify({passed:true,screenshots:shots,clientSettings:'mobile widths, own/global services, validation, API errors, read-only confirmation and saved device icons',sanitizer,calls},null,2));
  }finally{await browser.close()}
